@@ -49,6 +49,9 @@ class ModelRegistry:
     def _interpolate_env(self, value: str) -> str:
         def replace(match: re.Match[str]) -> str:
             name, default = match.group(1), match.group(2)
-            return os.getenv(name, default or "")
+            resolved = os.getenv(name, default)
+            if resolved is None:
+                raise AppError(f"Missing required environment variable: {name}", status_code=500)
+            return resolved
 
         return _ENV_VAR_PATTERN.sub(replace, value)

@@ -33,3 +33,15 @@ def test_chat_endpoint_returns_structured_response(monkeypatch: MonkeyPatch) -> 
     assert payload["session_id"]
     assert payload["model"] == "qwen2.5:7b-instruct-q4_K_M"
     assert isinstance(payload["latency_ms"], int)
+
+
+def test_chat_endpoint_rejects_oversized_request(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("APP_MAX_REQUEST_SIZE_BYTES", "64")
+
+    with TestClient(create_app()) as client:
+        response = client.post("/api/v1/chat", json={"message": "x" * 200})
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Request body too large"}

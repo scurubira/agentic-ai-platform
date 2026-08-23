@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from platform_core.errors import AppError
@@ -61,7 +61,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > self._max_body_size:
-            raise AppError("Request body too large", status_code=413)
+        body = await request.body()
+        if len(body) > self._max_body_size:
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
         return await call_next(request)
