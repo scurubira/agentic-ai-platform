@@ -1,0 +1,7 @@
+model_list:
+  - model_name: fast
+    litellm_params:
+      model: ollama_chat/${OLLAMA_MODEL:-qwen2.5:7b-instruct-q4_K_M}
+  - model_name: reasoning
+    litellm_params:
+      model: openai/${REASONING_MODEL_ID:-qwen-cloud-70b}
