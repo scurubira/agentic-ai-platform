@@ -1,0 +1,52 @@
+[project]
+name = "agentic-ai-platform"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "langgraph>=1.2.11",
+    "litellm>=1.98.0",
+    "psycopg[binary]>=3.3.4",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+    "sqlalchemy>=2.0.52",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.4",
+    "types-pyyaml>=6.0.12.20260815",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps", "agents", "platform_core", "mcp_servers", "evals"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+pretty = true
+check_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = [".venv"]
