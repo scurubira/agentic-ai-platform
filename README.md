@@ -76,6 +76,9 @@ Principais variáveis:
 - `POSTGRES_DB=agentic_ai_platform`
 - `POSTGRES_USER=postgres`
 - `POSTGRES_PASSWORD=postgres`
+- `NEWS_RSS_FEEDS=https://example.com/rss.xml,https://example.com/world.xml`
+- `NEWS_TIMEOUT_SECONDS=8`
+- `NEWS_MAX_ITEMS=5`
 
 ## Inicialização
 
@@ -111,6 +114,8 @@ curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Explique o que é uma plataforma agêntica."}'
 ```
+
+Para consultas de notícias, envie mensagens como "quais são as notícias de tecnologia?" com `NEWS_RSS_FEEDS` configurado.
 
 ## Troubleshooting
 
