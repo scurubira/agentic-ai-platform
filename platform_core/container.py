@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agents.supervisor.service import ChatService
+from mcp_servers.news.server import NewsMCPServer
 from platform_core.config.model_registry import ModelRegistry
 from platform_core.config.settings import Settings
 from platform_core.inference.gateway import LiteLLMInferenceGateway, StubInferenceGateway
@@ -77,7 +78,19 @@ def build_container() -> AppContainer:
         else InMemoryConversationStore()
     )
     mcp_gateway = MCPGateway()
-    chat_service = ChatService(conversation_store=conversation_store, inference_gateway=inference_gateway)
+    mcp_gateway.register(
+        "news",
+        NewsMCPServer(
+            feeds=[feed.strip() for feed in settings.news_rss_feeds.split(",") if feed.strip()],
+            timeout_seconds=settings.news_timeout_seconds,
+            max_items=settings.news_max_items,
+        ),
+    )
+    chat_service = ChatService(
+        conversation_store=conversation_store,
+        inference_gateway=inference_gateway,
+        mcp_gateway=mcp_gateway,
+    )
     readiness_service = ReadinessService(
         settings=settings,
         inference_gateway=inference_gateway,

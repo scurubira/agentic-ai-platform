@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from agents.supervisor.graph import build_supervisor_graph
 from platform_core.inference.types import InferenceGateway
+from platform_core.mcp.gateway import MCPGateway
 from platform_core.memory.store import ConversationStore
 from platform_core.observability.logging import get_logger
 
@@ -24,9 +25,10 @@ class ChatService:
         self,
         conversation_store: ConversationStore,
         inference_gateway: InferenceGateway,
+        mcp_gateway: MCPGateway,
     ) -> None:
         self._conversation_store = conversation_store
-        self._graph = build_supervisor_graph(inference_gateway)
+        self._graph = build_supervisor_graph(inference_gateway, mcp_gateway)
 
     async def chat(
         self,
@@ -56,7 +58,7 @@ class ChatService:
                 "session_id": active_session_id,
                 "agent": "supervisor",
                 "model_alias": model_alias,
-                "physical_model": result["physical_model"],
+                "physical_model": result.get("physical_model", "unknown"),
                 "latency_ms": latency_ms,
                 "tool_calls": 0,
                 "retrieval": False,
@@ -65,6 +67,6 @@ class ChatService:
         return {
             "answer": answer,
             "session_id": active_session_id,
-            "model": result["public_model_name"],
+            "model": result.get("public_model_name", "unknown"),
             "latency_ms": latency_ms,
         }
