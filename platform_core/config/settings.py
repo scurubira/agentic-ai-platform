@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     news_timeout_seconds: int = Field(default=8, alias="NEWS_TIMEOUT_SECONDS")
     news_max_items: int = Field(default=5, alias="NEWS_MAX_ITEMS")
     langfuse_enabled: bool = Field(default=False, alias="LANGFUSE_ENABLED")
+    langfuse_public_key: str | None = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str | None = Field(default=None, alias="LANGFUSE_SECRET_KEY")
+    langfuse_base_url: str = Field(default="http://localhost:3000", alias="LANGFUSE_BASE_URL")
 
     @property
     def cors_origins(self) -> list[str]:

@@ -29,6 +29,9 @@ class ModelRegistry:
         self._config_path = config_path
         self._models = self._load_models(config_path)
 
+    def list(self) -> list[ModelTarget]:
+        return sorted(self._models.values(), key=lambda model: model.alias)
+
     def get(self, alias: str) -> ModelTarget:
         try:
             return self._models[alias]

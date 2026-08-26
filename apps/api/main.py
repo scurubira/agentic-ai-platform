@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from apps.api.routes.chat import router as chat_router
 from apps.api.routes.health import router as health_router
+from apps.api.routes.platform import router as platform_router
 from platform_core.config.settings import Settings
 from platform_core.container import build_container
 from platform_core.errors import AppError
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     )
     application.include_router(health_router)
     application.include_router(chat_router)
+    application.include_router(platform_router)
 
     @application.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:

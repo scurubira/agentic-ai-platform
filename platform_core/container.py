@@ -11,6 +11,7 @@ from platform_core.inference.types import InferenceGateway
 from platform_core.mcp.gateway import MCPGateway
 from platform_core.memory.store import InMemoryConversationStore, PostgresConversationStore
 from platform_core.observability.logging import get_logger
+from platform_core.observability.tracing import TracingService, build_tracing_service
 
 logger = get_logger(__name__)
 ConversationStore = InMemoryConversationStore | PostgresConversationStore
@@ -21,6 +22,7 @@ class ReadinessService:
     settings: Settings
     inference_gateway: InferenceGateway
     conversation_store: ConversationStore
+    tracing_service: TracingService
 
     async def check(self) -> dict[str, object]:
         inference_check = await self.inference_gateway.readiness(model_alias=self.settings.default_model_alias)
@@ -35,6 +37,7 @@ class ReadinessService:
             "checks": {
                 "inference": inference_check,
                 "database": {"ok": database_ok, "backend": self.settings.state_backend},
+                "observability": self.tracing_service.readiness(),
             },
         }
 
@@ -48,6 +51,7 @@ class AppContainer:
     mcp_gateway: MCPGateway
     chat_service: ChatService
     readiness_service: ReadinessService
+    tracing_service: TracingService
 
     async def startup(self) -> None:
         if isinstance(self.conversation_store, PostgresConversationStore):
@@ -61,6 +65,7 @@ class AppContainer:
         )
 
     async def shutdown(self) -> None:
+        self.tracing_service.shutdown()
         logger.info("container_stopped")
 
 
@@ -78,23 +83,18 @@ def build_container() -> AppContainer:
         else InMemoryConversationStore()
     )
     mcp_gateway = MCPGateway()
-    mcp_gateway.register(
-        "news",
-        NewsMCPServer(
-            feeds=[feed.strip() for feed in settings.news_rss_feeds.split(",") if feed.strip()],
-            timeout_seconds=settings.news_timeout_seconds,
-            max_items=settings.news_max_items,
-        ),
-    )
+    tracing_service = build_tracing_service(settings)
     chat_service = ChatService(
         conversation_store=conversation_store,
         inference_gateway=inference_gateway,
-        mcp_gateway=mcp_gateway,
+        settings=settings,
+        tracing_service=tracing_service,
     )
     readiness_service = ReadinessService(
         settings=settings,
         inference_gateway=inference_gateway,
         conversation_store=conversation_store,
+        tracing_service=tracing_service,
     )
     return AppContainer(
         settings=settings,
@@ -104,4 +104,5 @@ def build_container() -> AppContainer:
         mcp_gateway=mcp_gateway,
         chat_service=chat_service,
         readiness_service=readiness_service,
+        tracing_service=tracing_service,
     )

@@ -4,9 +4,7 @@ from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from agents.tools.news import build_news_answer, should_route_to_news
-from platform_core.inference.types import InferenceGateway
-from platform_core.mcp.gateway import MCPGateway
+from platform_core.inference.types import InferenceGateway, InferenceResult
 
 
 class SupervisorState(TypedDict, total=False):
@@ -20,16 +18,30 @@ class SupervisorState(TypedDict, total=False):
     physical_model: str
 
 
-def build_supervisor_graph(inference_gateway: InferenceGateway, mcp_gateway: MCPGateway) -> Any:
+class StudioInferenceGateway:
+    async def complete(self, *, model_alias: str, conversation: list[dict[str, str]]) -> InferenceResult:
+        latest_message = conversation[-1]["content"] if conversation else ""
+        return InferenceResult(
+            answer=f"Studio response for: {latest_message}",
+            physical_model="studio-stub",
+            public_model_name="studio-stub",
+        )
+
+    async def readiness(self, *, model_alias: str) -> dict[str, object]:
+        return {"ok": True, "model_alias": model_alias, "physical_model": "studio-stub"}
+
+
+def build_supervisor_graph(inference_gateway: InferenceGateway) -> Any:
     async def supervisor_node(state: SupervisorState) -> SupervisorState:
         if should_route_to_news(state["message"]):
             return {"route": "news"}
         return {"route": "direct"}
 
     async def llm_node(state: SupervisorState) -> SupervisorState:
+        conversation = state.get("conversation") or [{"role": "user", "content": state["message"]}]
         result = await inference_gateway.complete(
-            model_alias=state["model_alias"],
-            conversation=state["conversation"],
+            model_alias=state.get("model_alias", "fast"),
+            conversation=conversation,
         )
         return {
             "answer": result.answer,
@@ -57,3 +69,7 @@ def build_supervisor_graph(inference_gateway: InferenceGateway, mcp_gateway: MCP
     graph.add_edge("llm", END)
     graph.add_edge("news", END)
     return graph.compile()
+
+
+def build_studio_graph() -> Any:
+    return build_supervisor_graph(StudioInferenceGateway())

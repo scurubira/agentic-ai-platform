@@ -5,10 +5,12 @@ from typing import TypedDict
 from uuid import uuid4
 
 from agents.supervisor.graph import build_supervisor_graph
+from platform_core.config.settings import Settings
 from platform_core.inference.types import InferenceGateway
 from platform_core.mcp.gateway import MCPGateway
 from platform_core.memory.store import ConversationStore
 from platform_core.observability.logging import get_logger
+from platform_core.observability.tracing import TracingService
 
 logger = get_logger(__name__)
 
@@ -25,10 +27,13 @@ class ChatService:
         self,
         conversation_store: ConversationStore,
         inference_gateway: InferenceGateway,
-        mcp_gateway: MCPGateway,
+        settings: Settings,
+        tracing_service: TracingService,
     ) -> None:
         self._conversation_store = conversation_store
-        self._graph = build_supervisor_graph(inference_gateway, mcp_gateway)
+        self._graph = build_supervisor_graph(inference_gateway)
+        self._settings = settings
+        self._tracing_service = tracing_service
 
     async def chat(
         self,
@@ -41,14 +46,39 @@ class ChatService:
         history = self._conversation_store.load_messages(active_session_id)
         conversation = [*history, {"role": "user", "content": message}]
         started_at = perf_counter()
-        result = await self._graph.ainvoke(
-            {
-                "session_id": active_session_id,
-                "message": message,
-                "model_alias": model_alias,
-                "conversation": conversation,
+        config = None
+        if self._settings.langfuse_enabled:
+            from langfuse.langchain import CallbackHandler
+
+            config = {
+                "callbacks": [CallbackHandler()],
+                "run_name": "supervisor-chat",
+                "metadata": {
+                    "langfuse_session_id": active_session_id,
+                    "langfuse_tags": ["api", self._settings.app_env],
+                    "model_alias": model_alias,
+                },
             }
-        )
+        with self._tracing_service.observe_chat(
+            session_id=active_session_id,
+            model_alias=model_alias,
+            message=message,
+        ) as observation:
+            result = await self._graph.ainvoke(
+                {
+                    "session_id": active_session_id,
+                    "message": message,
+                    "model_alias": model_alias,
+                    "conversation": conversation,
+                },
+                config=config,
+            )
+            if observation is not None:
+                observation.update(
+                    output={"answer": result["answer"]},
+                    model=result["physical_model"],
+                    metadata={"public_model": result["public_model_name"]},
+                )
         latency_ms = int((perf_counter() - started_at) * 1000)
         answer = result["answer"]
         self._conversation_store.save_turn(active_session_id, user_message=message, assistant_message=answer)

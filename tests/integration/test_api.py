@@ -19,6 +19,26 @@ def test_health_and_ready_endpoints(monkeypatch: MonkeyPatch) -> None:
     assert health_response.json() == {"status": "ok"}
     assert ready_response.status_code == 200
     assert ready_response.json()["status"] == "ready"
+    assert ready_response.json()["checks"]["observability"] == {
+        "ok": False,
+        "enabled": False,
+        "backend": "langfuse",
+    }
+
+
+def test_platform_overview_exposes_sanitized_inventory(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/platform/overview")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["agent"]["name"] == "supervisor"
+    assert {model["alias"] for model in payload["models"]} == {"fast", "reasoning"}
+    assert payload["services"]["memory"] == {"backend": "memory"}
+    assert "password" not in response.text.lower()
 
 
 def test_chat_endpoint_returns_structured_response(monkeypatch: MonkeyPatch) -> None:

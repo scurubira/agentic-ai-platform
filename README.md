@@ -1,6 +1,6 @@
 # agentic-ai-platform
 
-MVP open source de uma plataforma agêntica **local first, cloud ready** usando FastAPI, LangGraph, LiteLLM, Ollama, PostgreSQL e Qdrant.
+MVP open source de uma plataforma agêntica **local first, cloud ready** usando FastAPI, LangGraph, LiteLLM, Ollama, PostgreSQL, Qdrant e Langfuse.
 
 ## Objetivo
 
@@ -31,6 +31,7 @@ flowchart TD
 
 ```text
 apps/api/                # FastAPI gateway
+apps/web/                # Console administrativo React
 agents/supervisor/       # LangGraph supervisor graph
 platform_core/           # config, inference, memory, mcp, rag, observability
 mcp_servers/             # filesystem e database MCP servers
@@ -88,10 +89,53 @@ Principais variáveis:
 make up
 ```
 
+Esse comando inicia a API, PostgreSQL, Qdrant e o Langfuse self-hosted com seus serviços auxiliares.
+
+### LangGraph Studio
+
+Em outro terminal, inicie o servidor de desenvolvimento do grafo:
+
+```bash
+make studio
+```
+
+O comando usa o backend stub para permitir inspeção e execução do grafo sem depender do Ollama. Para executar a API principal com o modelo real, mantenha o Ollama ativo conforme a seção anterior.
+
+## Interfaces locais
+
+- API: http://localhost:8000
+- Console administrativo: http://localhost:5173
+- Swagger: http://localhost:8000/docs
+- LangGraph API: http://localhost:2024
+- LangGraph API Docs: http://localhost:2024/docs
+- LangGraph Studio: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
+- Langfuse: http://localhost:3000
+
+O LangGraph Studio é hospedado pelo LangSmith e exige login gratuito. O grafo e os dados executados por essa configuração continuam no servidor local em `127.0.0.1:2024`.
+
+Credenciais locais do Langfuse:
+
+- E-mail: `admin@localhost.local`
+- Senha: `local-admin-password`
+
+As credenciais, chaves e senhas em `docker-compose.langfuse.yml` são exclusivas para desenvolvimento local. Substitua todos esses valores antes de qualquer implantação compartilhada ou de produção.
+
 ### Desenvolvimento local da API
 
 ```bash
 make dev
+```
+
+Em outro terminal, inicie o console administrativo:
+
+```bash
+make web
+```
+
+Para desenvolvimento local com inferência stub e traces enviados diretamente ao Langfuse:
+
+```bash
+make dev-observed
 ```
 
 ## Testes e quality gates
@@ -106,6 +150,7 @@ make lint
 - `GET /health`
 - `GET /ready`
 - `POST /api/v1/chat`
+- `GET /api/v1/platform/overview`
 
 Exemplo:
 
@@ -129,12 +174,12 @@ Para consultas de notícias, envie mensagens como "quais são as notícias de te
 2. **LangGraph simples no MVP**: `START -> Supervisor -> LLM -> END`, com pontos claros para RAG/SQL/Tools.
 3. **PostgreSQL e Qdrant já containerizados**: disponíveis desde o início sem forçar uso prematuro do Qdrant.
 4. **MCP desacoplado**: filesystem/database expostos como servidores separados, não embutidos na lógica do agente.
-5. **Observabilidade enxuta**: logs estruturados agora; Langfuse fica opcional para preservar recursos no M4.
+5. **Observabilidade local**: logs estruturados e traces do LangGraph enviados ao Langfuse self-hosted.
 
 ## Roadmap
 
 1. Persistência de memória mais rica no PostgreSQL
 2. Ingestão TXT/Markdown + Retrieval Service em Qdrant
 3. MCP filesystem/database conectado ao supervisor
-4. Langfuse opcional por configuração
+4. Dashboards, avaliações e alertas no Langfuse
 5. Comparação de modelos local vs cloud em `evals/`
