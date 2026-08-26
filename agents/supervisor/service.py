@@ -27,11 +27,12 @@ class ChatService:
         self,
         conversation_store: ConversationStore,
         inference_gateway: InferenceGateway,
+        mcp_gateway: MCPGateway,
         settings: Settings,
         tracing_service: TracingService,
     ) -> None:
         self._conversation_store = conversation_store
-        self._graph = build_supervisor_graph(inference_gateway)
+        self._graph = build_supervisor_graph(inference_gateway, mcp_gateway)
         self._settings = settings
         self._tracing_service = tracing_service
 

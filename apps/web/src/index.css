@@ -1,3 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap');
-:root { font-family: Manrope, sans-serif; color: #18221f; background: #f4f6f2; font-synthesis: none; --ink:#18221f; --muted:#75807b; --line:#dfe4df; --surface:#fff; --green:#17795d; --greenSoft:#e2f2eb; --coral:#d65c45; --coralSoft:#fbe9e4; --blue:#3675a5; --blueSoft:#e6f0f7; }
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+:root { font-family:'Space Grotesk',sans-serif; color:#eaf1ee; background:#080b0d; font-synthesis:none; color-scheme:dark; --ink:#eef5f2; --muted:#82908a; --line:#26302d; --surface:#111715; --green:#9ef01a; --greenSoft:#1d2a14; --coral:#ff7657; --coralSoft:#2d1915; --blue:#32c5ff; --blueSoft:#102832; }
 * { box-sizing: border-box } body { margin:0; min-width:320px; min-height:100vh } button,input,textarea,select { font:inherit } button { letter-spacing:0 } a { color:inherit } #root { min-height:100vh }

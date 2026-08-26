@@ -4,7 +4,9 @@ from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from agents.tools.news import build_news_answer, should_route_to_news
 from platform_core.inference.types import InferenceGateway, InferenceResult
+from platform_core.mcp.gateway import MCPGateway
 
 
 class SupervisorState(TypedDict, total=False):
@@ -31,7 +33,7 @@ class StudioInferenceGateway:
         return {"ok": True, "model_alias": model_alias, "physical_model": "studio-stub"}
 
 
-def build_supervisor_graph(inference_gateway: InferenceGateway) -> Any:
+def build_supervisor_graph(inference_gateway: InferenceGateway, mcp_gateway: MCPGateway) -> Any:
     async def supervisor_node(state: SupervisorState) -> SupervisorState:
         if should_route_to_news(state["message"]):
             return {"route": "news"}
@@ -72,4 +74,4 @@ def build_supervisor_graph(inference_gateway: InferenceGateway) -> Any:
 
 
 def build_studio_graph() -> Any:
-    return build_supervisor_graph(StudioInferenceGateway())
+    return build_supervisor_graph(StudioInferenceGateway(), MCPGateway())

@@ -83,10 +83,19 @@ def build_container() -> AppContainer:
         else InMemoryConversationStore()
     )
     mcp_gateway = MCPGateway()
+    mcp_gateway.register(
+        "news",
+        NewsMCPServer(
+            feeds=settings.news_rss_feeds.split(","),
+            timeout_seconds=settings.news_timeout_seconds,
+            max_items=settings.news_max_items,
+        ),
+    )
     tracing_service = build_tracing_service(settings)
     chat_service = ChatService(
         conversation_store=conversation_store,
         inference_gateway=inference_gateway,
+        mcp_gateway=mcp_gateway,
         settings=settings,
         tracing_service=tracing_service,
     )
