@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     postgres_user: str = Field(default="postgres", alias="POSTGRES_USER")
     postgres_password: str = Field(default="postgres", alias="POSTGRES_PASSWORD")
     filesystem_mcp_allowed_root: Path = Field(default=Path("."), alias="FILESYSTEM_MCP_ALLOWED_ROOT")
-    news_rss_feeds: str = Field(default="", alias="NEWS_RSS_FEEDS")
+    news_rss_feeds: str = Field(
+        default="https://news.google.com/rss/search?q={query}&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+        alias="NEWS_RSS_FEEDS",
+    )
     news_timeout_seconds: int = Field(default=8, alias="NEWS_TIMEOUT_SECONDS")
     news_max_items: int = Field(default=5, alias="NEWS_MAX_ITEMS")
     langfuse_enabled: bool = Field(default=False, alias="LANGFUSE_ENABLED")

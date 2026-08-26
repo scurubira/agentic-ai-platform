@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote_plus
 from xml.etree import ElementTree
 
 import httpx
@@ -24,7 +25,8 @@ class NewsMCPServer:
             return []
 
         items: list[dict[str, Any]] = []
-        for feed_url in self._feeds:
+        for feed_template in self._feeds:
+            feed_url = feed_template.replace("{query}", quote_plus(query or "notícias do Brasil"))
             try:
                 payload = self._download_feed(feed_url)
                 items.extend(self._parse_feed(payload, source=feed_url))
@@ -94,6 +96,7 @@ class NewsMCPServer:
             link = self._safe_text(entry, "link")
             summary = self._safe_text(entry, "description")
             published_raw = self._safe_text(entry, "pubDate")
+            publisher = self._safe_text(entry, "source") or source
             if not title or not link:
                 continue
             items.append(
@@ -102,7 +105,7 @@ class NewsMCPServer:
                     "url": link,
                     "summary": summary,
                     "published_at": self._normalize_date(published_raw),
-                    "source": source,
+                    "source": publisher,
                 }
             )
         return items

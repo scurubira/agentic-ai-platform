@@ -18,5 +18,6 @@ def build_news_answer(mcp_gateway: MCPGateway, message: str) -> str:
     lines = ["Notícias encontradas:"]
     for item in items:
         source = item.get("source", "fonte desconhecida")
-        lines.append(f"- {item['title']} ({source}) - {item['url']}")
+        title = item["title"].removesuffix(f" - {source}")
+        lines.append(f"- {title} — {source}")
     return "\n".join(lines)
