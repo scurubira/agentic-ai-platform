@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     healthcheck_timeout_seconds: int = Field(default=3, alias="HEALTHCHECK_TIMEOUT_SECONDS")
 
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     state_backend: str = Field(default="memory", alias="STATE_BACKEND")
     database_url_override: str | None = Field(default=None, alias="DATABASE_URL")
     postgres_host: str = Field(default="localhost", alias="POSTGRES_HOST")
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     postgres_user: str = Field(default="postgres", alias="POSTGRES_USER")
     postgres_password: str = Field(default="postgres", alias="POSTGRES_PASSWORD")
     filesystem_mcp_allowed_root: Path = Field(default=Path("."), alias="FILESYSTEM_MCP_ALLOWED_ROOT")
+    governance_config_path: Path = Field(default=Path("data/governance.json"), alias="GOVERNANCE_CONFIG_PATH")
     news_rss_feeds: str = Field(
         default="https://news.google.com/rss/search?q={query}&hl=pt-BR&gl=BR&ceid=BR:pt-419",
         alias="NEWS_RSS_FEEDS",

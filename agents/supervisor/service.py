@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from agents.supervisor.graph import build_supervisor_graph
 from platform_core.config.settings import Settings
+from platform_core.governance.service import GovernanceService
 from platform_core.inference.types import InferenceGateway
 from platform_core.mcp.gateway import MCPGateway
 from platform_core.memory.store import ConversationStore
@@ -30,11 +31,13 @@ class ChatService:
         mcp_gateway: MCPGateway,
         settings: Settings,
         tracing_service: TracingService,
+        governance_service: GovernanceService,
     ) -> None:
         self._conversation_store = conversation_store
         self._graph = build_supervisor_graph(inference_gateway, mcp_gateway)
         self._settings = settings
         self._tracing_service = tracing_service
+        self._governance_service = governance_service
 
     async def chat(
         self,
@@ -82,6 +85,7 @@ class ChatService:
                 )
         latency_ms = int((perf_counter() - started_at) * 1000)
         answer = result["answer"]
+        self._governance_service.enforce(text=answer, stage="output")
         self._conversation_store.save_turn(active_session_id, user_message=message, assistant_message=answer)
         logger.info(
             "chat_completed",

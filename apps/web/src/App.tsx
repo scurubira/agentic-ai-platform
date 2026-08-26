@@ -2,12 +2,12 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowUpRight, Bot, Boxes, BrainCircuit, Check, ChevronRight,
   CircleAlert, Cpu, Database, Gauge, Menu, MessageSquareText, Network,
-  PanelLeftClose, RefreshCw, Send, ServerCog, Settings2, Sparkles,
-  TerminalSquare, Workflow, X, type LucideIcon,
+  PanelLeftClose, Play, RefreshCw, Send, ServerCog, Settings2, ShieldCheck, Sparkles,
+  TerminalSquare, TestTube2, Trash2, Workflow, X, type LucideIcon,
 } from 'lucide-react'
 import './App.css'
 
-type Section = 'overview' | 'playground' | 'models' | 'integrations'
+type Section = 'overview' | 'playground' | 'models' | 'integrations' | 'governance'
 type Model = { alias: string; name: string; provider: string; default: boolean }
 type Overview = {
   environment: string
@@ -29,6 +29,9 @@ type Readiness = {
   }
 }
 type Message = { role: 'user' | 'assistant'; content: string; meta?: string }
+type EvalDefinition = { id: string; name: string; description: string; expected_keywords: string[]; min_score: number }
+type Guardrail = { id: string; name: string; rule_type: 'blocked_terms' | 'required_terms' | 'max_length'; stage: 'input' | 'output' | 'both'; action: 'block' | 'warn'; terms: string[]; max_length: number | null; enabled: boolean }
+type GovernanceSnapshot = { evals: EvalDefinition[]; guardrails: Guardrail[] }
 
 const emptyOverview: Overview = {
   environment: 'development', agent: { name: 'supervisor', routes: ['direct', 'rag', 'sql', 'tools'] }, models: [],
@@ -37,6 +40,7 @@ const emptyOverview: Overview = {
 const nav: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Visão geral', icon: Gauge }, { id: 'playground', label: 'Playground', icon: MessageSquareText },
   { id: 'models', label: 'Modelos', icon: BrainCircuit }, { id: 'integrations', label: 'Integrações', icon: Network },
+  { id: 'governance', label: 'Governança', icon: ShieldCheck },
 ]
 const tools = [
   { name: 'API Docs', detail: 'FastAPI / Swagger', href: 'http://localhost:8000/docs', icon: TerminalSquare },
@@ -93,6 +97,7 @@ export default function App() {
         {section === 'playground' && <Playground models={overview.models} available={!error} />}
         {section === 'models' && <Models models={overview.models} />}
         {section === 'integrations' && <Integrations data={overview} ready={ready} />}
+        {section === 'governance' && <Governance available={!error} />}
       </div>
     </main>
   </div>
@@ -149,3 +154,69 @@ function Integrations({ data, ready }: { data: Overview; ready: Readiness | null
   const items = [{ name: 'LiteLLM', type: 'Inference gateway', detail: data.services.inference.backend, icon: Cpu, active: ready?.checks.inference.ok }, { name: 'PostgreSQL', type: 'State & memory', detail: data.services.memory.backend, icon: Database, active: ready?.checks.database.ok }, { name: 'Langfuse', type: 'Observabilidade', detail: ready?.checks.observability?.ok ? 'Autenticado pela plataforma' : data.services.observability.enabled ? 'Falha de autenticação' : 'Configuração opcional', icon: Activity, active: ready?.checks.observability?.ok }, { name: 'MCP', type: 'Tool gateway', detail: `${data.services.mcp.servers.length} servidores registrados`, icon: Network, active: data.services.mcp.servers.length > 0 }]
   return <div className="page"><Heading eyebrow="ECOSSISTEMA" title="Integrações" text="Conectores de inferência, persistência, ferramentas e observabilidade." /><div className="integrationGrid">{items.map(({ icon: Icon, ...item }) => <article className="integration" key={item.name}><span><Icon /></span><div><small>{item.type}</small><h2>{item.name}</h2><p>{item.detail}</p></div><em className={item.active ? 'on' : ''}>{item.active ? 'Ativa' : 'Inativa'}</em></article>)}</div><ToolSection /></div>
 }
+
+function Governance({ available }: { available: boolean }) {
+  const [tab, setTab] = useState<'evals' | 'guardrails'>('evals')
+  const [data, setData] = useState<GovernanceSnapshot>({ evals: [], guardrails: [] })
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string }>()
+  const [evalName, setEvalName] = useState(''); const [evalDescription, setEvalDescription] = useState(''); const [keywords, setKeywords] = useState(''); const [minScore, setMinScore] = useState('1')
+  const [selectedEval, setSelectedEval] = useState(''); const [evalAnswer, setEvalAnswer] = useState(''); const [evalResult, setEvalResult] = useState<{ passed: boolean; correctness: number; groundedness: number }>()
+  const [guardName, setGuardName] = useState(''); const [ruleType, setRuleType] = useState<Guardrail['rule_type']>('blocked_terms'); const [stage, setStage] = useState<Guardrail['stage']>('input'); const [action, setAction] = useState<Guardrail['action']>('block'); const [guardValue, setGuardValue] = useState('')
+  const [testStage, setTestStage] = useState<'input' | 'output'>('input'); const [testText, setTestText] = useState(''); const [testResult, setTestResult] = useState<{ allowed: boolean; violations: { name: string; action: string; detail: string }[] }>()
+
+  async function request(path: string, options?: RequestInit) {
+    const response = await fetch(path, options); const body = response.status === 204 ? undefined : await response.json()
+    if (!response.ok) throw new Error(body?.detail || `Falha HTTP ${response.status}`)
+    return body
+  }
+  async function loadGovernance() {
+    try { setData(await request('/api/v1/governance')); setNotice(undefined) }
+    catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível carregar a governança.' }) }
+  }
+  useEffect(() => { if (available) void loadGovernance() }, [available])
+  async function execute(task: () => Promise<void>, success: string) {
+    setBusy(true); setNotice(undefined)
+    try { await task(); setNotice({ kind: 'ok', text: success }) }
+    catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Operação não concluída.' }) }
+    finally { setBusy(false) }
+  }
+  function createEval(event: FormEvent) {
+    event.preventDefault(); void execute(async () => {
+      await request('/api/v1/governance/evals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: evalName, description: evalDescription, expected_keywords: keywords.split(',').map(item => item.trim()).filter(Boolean), min_score: Number(minScore) }) })
+      setEvalName(''); setEvalDescription(''); setKeywords(''); await loadGovernance()
+    }, 'Eval salvo e pronto para execução.')
+  }
+  function createGuardrail(event: FormEvent) {
+    event.preventDefault(); void execute(async () => {
+      await request('/api/v1/governance/guardrails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: guardName, rule_type: ruleType, stage, action, terms: ruleType === 'max_length' ? [] : guardValue.split(',').map(item => item.trim()).filter(Boolean), max_length: ruleType === 'max_length' ? Number(guardValue) : null, enabled: true }) })
+      setGuardName(''); setGuardValue(''); await loadGovernance()
+    }, 'Guardrail ativado na plataforma.')
+  }
+  function runEval(event: FormEvent) {
+    event.preventDefault(); if (!selectedEval) return
+    void execute(async () => { setEvalResult(await request(`/api/v1/governance/evals/${selectedEval}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: evalAnswer, latency_ms: 0 }) })) }, 'Execução concluída.')
+  }
+  function testGuardrails(event: FormEvent) {
+    event.preventDefault(); void execute(async () => { setTestResult(await request('/api/v1/governance/guardrails/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: testText, stage: testStage }) })) }, 'Teste concluído.')
+  }
+  function remove(kind: 'evals' | 'guardrails', id: string) { void execute(async () => { await request(`/api/v1/governance/${kind}/${id}`, { method: 'DELETE' }); await loadGovernance() }, 'Definição removida.') }
+  function toggle(item: Guardrail) { void execute(async () => { await request(`/api/v1/governance/guardrails/${item.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !item.enabled }) }); await loadGovernance() }, item.enabled ? 'Guardrail pausado.' : 'Guardrail ativado.') }
+
+  return <div className="page governancePage">
+    <Heading eyebrow="TRUST CENTER" title="Governança" text="Construa, execute e opere avaliações e políticas de proteção sem sair da plataforma." />
+    <div className="governanceStats"><Metric icon={TestTube2} label="Evals configurados" value={String(data.evals.length).padStart(2, '0')} detail="critérios executáveis" tone="blue" /><Metric icon={ShieldCheck} label="Guardrails ativos" value={String(data.guardrails.filter(item => item.enabled).length).padStart(2, '0')} detail={`${data.guardrails.length} regras cadastradas`} tone="green" /></div>
+    <div className="governanceTabs" role="tablist"><button className={tab === 'evals' ? 'active' : ''} onClick={() => setTab('evals')}><TestTube2 /> Evals</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}><ShieldCheck /> Guardrails</button></div>
+    {notice && <div className={`governanceNotice ${notice.kind}`}><span>{notice.kind === 'ok' ? <Check /> : <CircleAlert />}</span>{notice.text}</div>}
+    {tab === 'evals' ? <div className="builderGrid">
+      <form className="builder panel" onSubmit={createEval}><PanelHead eyebrow="NOVO CRITÉRIO" title="Construir eval" extra={<TestTube2 />} /><div className="formBody"><label>Nome<input value={evalName} onChange={event => setEvalName(event.target.value)} required placeholder="Ex.: Cobertura da resposta" /></label><label>Descrição<textarea value={evalDescription} onChange={event => setEvalDescription(event.target.value)} placeholder="Objetivo deste critério" /></label><label>Palavras esperadas<input value={keywords} onChange={event => setKeywords(event.target.value)} required placeholder="MCP, LangGraph, gateway" /><small>Separe múltiplos termos por vírgula.</small></label><label>Score mínimo<select value={minScore} onChange={event => setMinScore(event.target.value)}><option value="1">100%</option><option value="0.75">75%</option><option value="0.5">50%</option><option value="0.25">25%</option></select></label><button className="primary" disabled={busy}><Check /> Salvar eval</button></div></form>
+      <form className="builder panel" onSubmit={runEval}><PanelHead eyebrow="LABORATÓRIO" title="Executar resposta" extra={<Play />} /><div className="formBody"><label>Eval<select value={selectedEval} onChange={event => { setSelectedEval(event.target.value); setEvalResult(undefined) }} required><option value="">Selecione um critério</option>{data.evals.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Resposta avaliada<textarea className="testArea" value={evalAnswer} onChange={event => setEvalAnswer(event.target.value)} required placeholder="Cole ou escreva a resposta do agente..." /></label><button className="secondary" disabled={busy || !selectedEval}><Play /> Executar eval</button>{evalResult && <Result allowed={evalResult.passed} title={evalResult.passed ? 'Critério aprovado' : 'Critério reprovado'} detail={`Correctness ${Math.round(evalResult.correctness * 100)}% · Groundedness ${Math.round(evalResult.groundedness * 100)}%`} />}</div></form>
+    </div> : <div className="builderGrid">
+      <form className="builder panel" onSubmit={createGuardrail}><PanelHead eyebrow="NOVA POLÍTICA" title="Construir guardrail" extra={<ShieldCheck />} /><div className="formBody splitFields"><label className="wide">Nome<input value={guardName} onChange={event => setGuardName(event.target.value)} required placeholder="Ex.: Bloquear dados sensíveis" /></label><label>Tipo<select value={ruleType} onChange={event => setRuleType(event.target.value as Guardrail['rule_type'])}><option value="blocked_terms">Bloquear termos</option><option value="required_terms">Exigir termos</option><option value="max_length">Limitar tamanho</option></select></label><label>Aplicar em<select value={stage} onChange={event => setStage(event.target.value as Guardrail['stage'])}><option value="input">Entrada</option><option value="output">Saída</option><option value="both">Entrada e saída</option></select></label><label>Ação<select value={action} onChange={event => setAction(event.target.value as Guardrail['action'])}><option value="block">Bloquear</option><option value="warn">Alertar</option></select></label><label>{ruleType === 'max_length' ? 'Máximo de caracteres' : 'Termos'}<input type={ruleType === 'max_length' ? 'number' : 'text'} min={ruleType === 'max_length' ? 1 : undefined} value={guardValue} onChange={event => setGuardValue(event.target.value)} required placeholder={ruleType === 'max_length' ? '4000' : 'senha, token, segredo'} /></label><button className="primary wide" disabled={busy}><ShieldCheck /> Criar e ativar</button></div></form>
+      <form className="builder panel" onSubmit={testGuardrails}><PanelHead eyebrow="POLICY LAB" title="Testar políticas" extra={<Play />} /><div className="formBody"><label>Estágio<select value={testStage} onChange={event => setTestStage(event.target.value as 'input' | 'output')}><option value="input">Entrada do usuário</option><option value="output">Saída do agente</option></select></label><label>Conteúdo<textarea className="testArea" value={testText} onChange={event => setTestText(event.target.value)} required placeholder="Digite um conteúdo para testar contra regras ativas..." /></label><button className="secondary" disabled={busy}><Play /> Testar guardrails</button>{testResult && <Result allowed={testResult.allowed} title={testResult.allowed ? 'Conteúdo permitido' : 'Conteúdo bloqueado'} detail={testResult.violations.length ? testResult.violations.map(item => `${item.name}: ${item.detail}`).join(' · ') : 'Nenhuma violação encontrada.'} />}</div></form>
+    </div>}
+    <section className="definitionList"><div className="definitionTitle"><div><span className="eyebrow">INVENTÁRIO</span><h2>{tab === 'evals' ? 'Critérios registrados' : 'Políticas registradas'}</h2></div><span>{tab === 'evals' ? data.evals.length : data.guardrails.length} definições</span></div>{tab === 'evals' ? data.evals.map(item => <article className="definition" key={item.id}><span><TestTube2 /></span><div><b>{item.name}</b><p>{item.description || 'Sem descrição'}</p><small>{item.expected_keywords.join(' · ')} · mínimo {Math.round(item.min_score * 100)}%</small></div><button className="icon danger" onClick={() => remove('evals', item.id)} title="Excluir eval"><Trash2 /></button></article>) : data.guardrails.map(item => <article className={`definition ${item.enabled ? '' : 'disabled'}`} key={item.id}><span><ShieldCheck /></span><div><b>{item.name}</b><p>{item.rule_type === 'max_length' ? `Máximo ${item.max_length} caracteres` : item.terms.join(' · ')}</p><small>{item.stage} · {item.action}</small></div><button className={`statusToggle ${item.enabled ? 'on' : ''}`} onClick={() => toggle(item)}>{item.enabled ? 'Ativo' : 'Pausado'}</button><button className="icon danger" onClick={() => remove('guardrails', item.id)} title="Excluir guardrail"><Trash2 /></button></article>)}{(tab === 'evals' ? data.evals : data.guardrails).length === 0 && <div className="empty"><Boxes /><b>Nenhuma definição criada</b><small>Use o construtor acima para começar.</small></div>}</section>
+  </div>
+}
+
+function Result({ allowed, title, detail }: { allowed: boolean; title: string; detail: string }) { return <div className={`policyResult ${allowed ? 'pass' : 'fail'}`}><span>{allowed ? <Check /> : <CircleAlert />}</span><div><b>{title}</b><p>{detail}</p></div></div> }

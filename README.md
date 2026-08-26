@@ -70,6 +70,8 @@ Principais variáveis:
 
 - `MODEL_BACKEND=litellm`
 - `DEFAULT_MODEL_ALIAS=fast`
+- `OPENROUTER_API_KEY`: chave criada em https://openrouter.ai/settings/keys
+- `OPENROUTER_FREE_MODEL_ID=openrouter/free`: roteia automaticamente entre modelos gratuitos; também aceita um ID `:free`
 - `OLLAMA_BASE_URL=http://localhost:11434`
 - `STATE_BACKEND=postgres`
 - `POSTGRES_HOST=localhost`

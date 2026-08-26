@@ -5,3 +5,6 @@ model_list:
   - model_name: reasoning
     litellm_params:
       model: openai/${REASONING_MODEL_ID:-qwen-cloud-70b}
+  - model_name: openrouter-free
+    litellm_params:
+      model: openrouter/${OPENROUTER_FREE_MODEL_ID:-openrouter/free}

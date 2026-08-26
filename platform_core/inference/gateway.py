@@ -7,6 +7,7 @@ from litellm import acompletion
 
 from platform_core.config.model_registry import ModelRegistry
 from platform_core.config.settings import Settings
+from platform_core.errors import AppError
 from platform_core.inference.types import InferenceResult
 
 
@@ -42,6 +43,10 @@ class LiteLLMInferenceGateway:
         }
         if target.provider.startswith("ollama"):
             kwargs["api_base"] = self._settings.ollama_base_url
+        if target.provider == "openrouter":
+            if not self._settings.openrouter_api_key:
+                raise AppError("OPENROUTER_API_KEY is required for OpenRouter models", status_code=503)
+            kwargs["api_key"] = self._settings.openrouter_api_key
         response = await acompletion(**kwargs)
         answer = str(response.choices[0].message.content or "").strip()
         return InferenceResult(
@@ -52,6 +57,13 @@ class LiteLLMInferenceGateway:
 
     async def readiness(self, *, model_alias: str) -> dict[str, object]:
         target = self._registry.get(model_alias)
+        if target.provider == "openrouter" and not self._settings.openrouter_api_key:
+            return {
+                "ok": False,
+                "model_alias": model_alias,
+                "physical_model": target.physical_model,
+                "reason": "OPENROUTER_API_KEY is not configured",
+            }
         if target.provider.startswith("ollama"):
             async with httpx.AsyncClient(timeout=self._settings.healthcheck_timeout_seconds) as client:
                 response = await client.get(f"{self._settings.ollama_base_url}/api/tags")

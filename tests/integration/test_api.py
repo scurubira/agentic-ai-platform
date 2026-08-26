@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -10,6 +12,7 @@ from mcp_servers.news.server import NewsMCPServer
 def test_health_and_ready_endpoints(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("MODEL_BACKEND", "stub")
     monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("LANGFUSE_ENABLED", "false")
 
     with TestClient(create_app()) as client:
         health_response = client.get("/health")
@@ -36,7 +39,7 @@ def test_platform_overview_exposes_sanitized_inventory(monkeypatch: MonkeyPatch)
     payload = response.json()
     assert response.status_code == 200
     assert payload["agent"]["name"] == "supervisor"
-    assert {model["alias"] for model in payload["models"]} == {"fast", "reasoning"}
+    assert {model["alias"] for model in payload["models"]} == {"fast", "openrouter-free", "reasoning"}
     assert payload["services"]["memory"] == {"backend": "memory"}
     assert "password" not in response.text.lower()
 
@@ -97,3 +100,60 @@ def test_chat_endpoint_routes_news_requests(monkeypatch: MonkeyPatch) -> None:
     assert "Notícias encontradas:" in payload["answer"]
     assert "Notícia de tecnologia" in payload["answer"]
     assert payload["model"] == "news-mcp"
+
+
+def test_chat_endpoint_explains_missing_openrouter_key(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "litellm")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "Olá", "model": "openrouter-free"},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "OPENROUTER_API_KEY is required for OpenRouter models"}
+
+
+def test_governance_api_creates_and_runs_eval(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("GOVERNANCE_CONFIG_PATH", str(tmp_path / "governance.json"))
+
+    with TestClient(create_app()) as client:
+        created = client.post(
+            "/api/v1/governance/evals",
+            json={"name": "Qualidade", "expected_keywords": ["MCP"], "min_score": 1},
+        )
+        result = client.post(
+            f"/api/v1/governance/evals/{created.json()['id']}/run",
+            json={"answer": "Resposta com MCP", "latency_ms": 50},
+        )
+
+    assert created.status_code == 201
+    assert result.json()["passed"] is True
+
+
+def test_active_guardrail_blocks_chat(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("GOVERNANCE_CONFIG_PATH", str(tmp_path / "governance.json"))
+
+    with TestClient(create_app()) as client:
+        created = client.post(
+            "/api/v1/governance/guardrails",
+            json={
+                "name": "Sem segredos",
+                "rule_type": "blocked_terms",
+                "stage": "input",
+                "action": "block",
+                "terms": ["senha"],
+            },
+        )
+        blocked = client.post("/api/v1/chat", json={"message": "minha senha", "model": "fast"})
+
+    assert created.status_code == 201
+    assert blocked.status_code == 422
+    assert blocked.json() == {"detail": "Content blocked by guardrail: Sem segredos"}

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from apps.api.routes.chat import router as chat_router
+from apps.api.routes.governance import router as governance_router
 from apps.api.routes.health import router as health_router
 from apps.api.routes.platform import router as platform_router
 from platform_core.config.settings import Settings
@@ -35,11 +36,12 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
     application.include_router(health_router)
     application.include_router(chat_router)
+    application.include_router(governance_router)
     application.include_router(platform_router)
 
     @application.exception_handler(AppError)

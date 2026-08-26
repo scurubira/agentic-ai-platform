@@ -6,6 +6,7 @@ from agents.supervisor.service import ChatService
 from mcp_servers.news.server import NewsMCPServer
 from platform_core.config.model_registry import ModelRegistry
 from platform_core.config.settings import Settings
+from platform_core.governance.service import GovernanceService
 from platform_core.inference.gateway import LiteLLMInferenceGateway, StubInferenceGateway
 from platform_core.inference.types import InferenceGateway
 from platform_core.mcp.gateway import MCPGateway
@@ -25,7 +26,11 @@ class ReadinessService:
     tracing_service: TracingService
 
     async def check(self) -> dict[str, object]:
-        inference_check = await self.inference_gateway.readiness(model_alias=self.settings.default_model_alias)
+        try:
+            inference_check = await self.inference_gateway.readiness(model_alias=self.settings.default_model_alias)
+        except Exception:
+            logger.exception("inference_readiness_failed")
+            inference_check = {"ok": False, "model_alias": self.settings.default_model_alias}
         database_ok = True
         if isinstance(self.conversation_store, PostgresConversationStore):
             try:
@@ -52,6 +57,7 @@ class AppContainer:
     chat_service: ChatService
     readiness_service: ReadinessService
     tracing_service: TracingService
+    governance_service: GovernanceService
 
     async def startup(self) -> None:
         if isinstance(self.conversation_store, PostgresConversationStore):
@@ -92,12 +98,14 @@ def build_container() -> AppContainer:
         ),
     )
     tracing_service = build_tracing_service(settings)
+    governance_service = GovernanceService(settings.governance_config_path)
     chat_service = ChatService(
         conversation_store=conversation_store,
         inference_gateway=inference_gateway,
         mcp_gateway=mcp_gateway,
         settings=settings,
         tracing_service=tracing_service,
+        governance_service=governance_service,
     )
     readiness_service = ReadinessService(
         settings=settings,
@@ -114,4 +122,5 @@ def build_container() -> AppContainer:
         chat_service=chat_service,
         readiness_service=readiness_service,
         tracing_service=tracing_service,
+        governance_service=governance_service,
     )
