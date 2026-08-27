@@ -82,6 +82,11 @@ Principais variáveis:
 - `NEWS_RSS_FEEDS=https://example.com/rss.xml,https://example.com/world.xml`
 - `NEWS_TIMEOUT_SECONDS=8`
 - `NEWS_MAX_ITEMS=5`
+- `LANGFUSE_ENABLED=true`: habilita traces do supervisor e callbacks do LangGraph
+- `LANGFUSE_BASE_URL=http://localhost:3000`: endpoint usado quando a API roda no host
+- `LANGFUSE_PUBLIC_KEY` e `LANGFUSE_SECRET_KEY`: credenciais do projeto no Langfuse
+
+No Docker Compose, `LANGFUSE_BASE_URL` é sobrescrito para `http://langfuse-web:3000`. Não use `localhost` para conectar a API containerizada ao Langfuse, pois ele apontaria para o próprio container da API.
 
 ## Inicialização
 
@@ -142,6 +147,25 @@ make dev-observed
 
 Esse modo usa o alias configurado em `DEFAULT_MODEL_ALIAS` e requer o Ollama e o Langfuse locais ativos. Para executar sem dependências de inferência, use `make dev-stub`.
 
+### Observabilidade com Langfuse
+
+A stack completa já habilita o Langfuse na API containerizada:
+
+```bash
+make up
+curl -sS http://localhost:8000/ready
+```
+
+O check `observability` deve retornar `{"ok":true,"enabled":true,"backend":"langfuse"}`. Para gerar um trace:
+
+```bash
+curl -sS -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Explique observabilidade de agentes."}'
+```
+
+Acesse http://localhost:3000 com as credenciais locais, abra **Observations** e filtre pelo nome `supervisor-chat` ou por `Is Root Observation = true`. No Langfuse v4, traces são conjuntos de observations com o mesmo `trace_id`; os endpoints legados de traces e observations podem retornar vazio ou indisponível no modo `events_only` e não devem ser usados como health check.
+
 ## Testes e quality gates
 
 ```bash
@@ -169,6 +193,8 @@ Para consultas de notícias, envie mensagens como "quais são as notícias de te
 ## Troubleshooting
 
 - **`/ready` falha no Ollama**: confirme que `ollama serve` está ativo e que `OLLAMA_BASE_URL` aponta para `http://localhost:11434` (host) ou `http://host.docker.internal:11434` (container).
+- **Observabilidade habilitada, mas com `ok: false`**: confirme que a API Docker usa `LANGFUSE_BASE_URL=http://langfuse-web:3000`. Se o container mantiver valores antigos do `.env`, recrie somente a API com `docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up -d --no-deps --force-recreate api`.
+- **Nenhuma observation no Langfuse v4**: execute uma chamada em `POST /api/v1/chat`, abra **Observations** e remova filtros salvos antes de buscar por `supervisor-chat`.
 - **Banco indisponível**: valide `DATABASE_URL` e execute `make up` para subir PostgreSQL.
 - **Modelo não encontrado**: rode `ollama list` e ajuste `OLLAMA_MODEL`.
 
