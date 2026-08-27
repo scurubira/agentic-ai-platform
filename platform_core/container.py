@@ -15,6 +15,7 @@ from platform_core.mcp.gateway import MCPGateway
 from platform_core.memory.store import InMemoryConversationStore, PostgresConversationStore
 from platform_core.observability.logging import get_logger
 from platform_core.observability.tracing import TracingService, build_tracing_service
+from platform_core.rag.wiki import WikiService
 
 logger = get_logger(__name__)
 ConversationStore = InMemoryConversationStore | PostgresConversationStore
@@ -53,6 +54,7 @@ class ReadinessService:
 class AppContainer:
     settings: Settings
     agent_registry: AgentRegistry
+    wiki_service: WikiService
     model_registry: ModelRegistry
     model_catalog_service: ModelCatalogService
     inference_gateway: InferenceGateway
@@ -82,6 +84,7 @@ class AppContainer:
 def build_container() -> AppContainer:
     settings = Settings()
     agent_registry = AgentRegistry(settings.agent_config_path)
+    wiki_service = WikiService(settings.wiki_config_path)
     model_registry = ModelRegistry(settings.model_config_path, settings.dynamic_model_config_path)
     model_catalog_service = ModelCatalogService(settings)
     inference_gateway: InferenceGateway = (
@@ -122,6 +125,7 @@ def build_container() -> AppContainer:
     return AppContainer(
         settings=settings,
         agent_registry=agent_registry,
+        wiki_service=wiki_service,
         model_registry=model_registry,
         model_catalog_service=model_catalog_service,
         inference_gateway=inference_gateway,

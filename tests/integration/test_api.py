@@ -129,6 +129,73 @@ def test_agent_api_rejects_unknown_model(monkeypatch: MonkeyPatch) -> None:
     assert response.status_code == 400
 
 
+def test_wiki_api_creates_updates_answers_and_deletes_page(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+
+    with TestClient(create_app()) as client:
+        created = client.post(
+            "/api/v1/wiki/pages",
+            json={"title": "Guia RAG", "content": "O Qdrant guarda os vetores usados na recuperação.", "tags": ["RAG"]},
+        )
+        page_id = created.json()["id"]
+        updated = client.put(
+            f"/api/v1/wiki/pages/{page_id}",
+            json={
+                "title": "Guia RAG",
+                "content": "O Qdrant guarda vetores e permite busca semântica.",
+                "tags": ["RAG"],
+            },
+        )
+        answer = client.post("/api/v1/wiki/ask", json={"question": "Onde ficam os vetores?", "model_alias": "fast"})
+        deleted = client.delete(f"/api/v1/wiki/pages/{page_id}")
+
+    assert created.status_code == 201
+    assert updated.json()["tags"] == ["rag"]
+    assert answer.status_code == 200
+    assert answer.json()["sources"][0]["source"] == "Guia RAG#1"
+    assert deleted.status_code == 204
+
+
+def test_wiki_file_import_accepts_text_and_rejects_binary_extension(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+
+    with TestClient(create_app()) as client:
+        imported = client.post(
+            "/api/v1/wiki/import/file",
+            json={"filename": "architecture.md", "title": "Arquitetura", "content": "# Plataforma", "tags": []},
+        )
+        rejected = client.post(
+            "/api/v1/wiki/import/file",
+            json={"filename": "archive.zip", "title": "Arquivo", "content": "bytes", "tags": []},
+        )
+
+    assert imported.status_code == 201
+    assert imported.json()["source"] == "file:architecture.md"
+    assert rejected.status_code == 422
+
+
+def test_wiki_repository_import_is_safe_and_idempotent(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Projeto\n\nDocumentação da plataforma.", encoding="utf-8")
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("WIKI_REPOSITORY_ROOT", str(repository))
+
+    with TestClient(create_app()) as client:
+        first = client.post("/api/v1/wiki/import/repository", json={"relative_path": "."})
+        second = client.post("/api/v1/wiki/import/repository", json={"relative_path": "."})
+        inventory = client.get("/api/v1/wiki")
+        traversal = client.post("/api/v1/wiki/import/repository", json={"relative_path": ".."})
+
+    assert first.json()["imported"] == 1
+    assert second.json()["imported"] == 1
+    assert inventory.json()["stats"]["pages"] == 1
+    assert traversal.status_code == 422
+
+
 def test_chat_endpoint_returns_structured_response(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("MODEL_BACKEND", "stub")
     monkeypatch.setenv("STATE_BACKEND", "memory")

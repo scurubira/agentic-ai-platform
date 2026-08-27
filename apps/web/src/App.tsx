@@ -1,13 +1,13 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowUpRight, Bot, Boxes, BrainCircuit, Check, ChevronRight, Clock3,
+  Activity, ArrowUpRight, BarChart3, Bot, Boxes, BrainCircuit, Check, ChevronRight, Clock3,
   CircleAlert, Cpu, Database, Gauge, Menu, MessageSquareText, Network,
   PanelLeftClose, Play, Plus, RefreshCw, Search, Send, ServerCog, Settings2, ShieldCheck, Sparkles,
   TerminalSquare, TestTube2, Trash2, Workflow, X, type LucideIcon,
 } from 'lucide-react'
 import './App.css'
 
-type Section = 'overview' | 'playground' | 'agents' | 'models' | 'integrations' | 'governance'
+type Section = 'overview' | 'playground' | 'reports' | 'agents' | 'models' | 'integrations' | 'governance'
 type Model = { alias: string; name: string; provider: string; default: boolean }
 type Agent = { id: string; name: string; description: string; model_alias: string; capabilities: string[]; protected: boolean }
 type CatalogAgent = Agent & { installed: boolean }
@@ -44,6 +44,7 @@ const emptyOverview: Overview = {
 }
 const nav: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Visão geral', icon: Gauge }, { id: 'playground', label: 'Playground', icon: MessageSquareText },
+  { id: 'reports', label: 'Relatórios', icon: BarChart3 },
   { id: 'agents', label: 'Agentes', icon: Bot }, { id: 'models', label: 'Modelos', icon: BrainCircuit }, { id: 'integrations', label: 'Integrações', icon: Network },
   { id: 'governance', label: 'Governança', icon: ShieldCheck },
 ]
@@ -100,6 +101,7 @@ export default function App() {
         {error && <div className="alert"><CircleAlert /><span><b>API fora de alcance.</b> Inicie o backend em localhost:8000.</span><button onClick={() => void load()}>Tentar novamente</button></div>}
         {section === 'overview' && <OverviewPage data={overview} ready={ready} loading={loading} go={go} />}
         {section === 'playground' && <Playground models={overview.models} available={!error} />}
+        {section === 'reports' && <ModelReports />}
         {section === 'agents' && <Agents models={overview.models} available={!error} />}
         {section === 'models' && <Models models={overview.models} onChanged={load} />}
         {section === 'integrations' && <Integrations data={overview} ready={ready} />}
@@ -213,6 +215,20 @@ function Playground({ models, available }: { models: Model[]; available: boolean
     <aside className="runConfig"><PanelHead eyebrow="EXECUÇÃO" title="Configuração" extra={<Settings2 />} /><label>Modelo<select value={model} onChange={e => setModel(e.target.value)}>{models.length ? models.map(item => <option value={item.alias} key={item.alias}>{item.alias} · {item.name}</option>) : <option>fast</option>}</select></label><div className="readout"><span>Agente</span><b>supervisor</b></div><div className="readout"><span>Sessão</span><b>{session ? `${session.slice(0, 10)}…` : 'nova sessão'}</b></div><div className="flow"><span>Fluxo atual</span><div><b>START</b><i /><b>SUPERVISOR</b><i /><b>LLM</b><i /><b>END</b></div></div></aside>
   </div><section className="questionHistory panel"><div className="historyHead"><div><span className="eyebrow">CONVERSAS RECENTES</span><h2><Clock3 /> Histórico de sessões</h2></div>{sessionHistory.length > 0 && <button type="button" onClick={() => setSessionHistory([])}>Limpar histórico</button>}</div><div className="historyList">{sessionHistory.map(item => { const firstQuestion = item.messages.find(message => message.role === 'user')?.content || 'Sessão sem título'; const turns = item.messages.filter(message => message.role === 'user').length; return <button className={session === item.id ? 'active' : ''} type="button" key={item.id} onClick={() => openSession(item)} title="Reabrir esta sessão"><span>{firstQuestion}</span><small>{turns} {turns === 1 ? 'pergunta' : 'perguntas'} · {item.model}</small><time>{new Date(item.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></button> })}{sessionHistory.length === 0 && <p>As sessões concluídas aparecerão aqui e poderão ser reabertas.</p>}</div></section></div>
 }
+
+function ModelReports() {
+  const sessions: PlaygroundSession[] = (() => { try { const saved = JSON.parse(localStorage.getItem('playground-session-history') || '[]'); return Array.isArray(saved) ? saved : [] } catch { return [] } })()
+  const runs = sessions.flatMap(item => item.messages.flatMap(message => { const match = message.role === 'assistant' ? message.meta?.match(/^(.+) · (\d+) ms$/) : undefined; return match ? [{ model: match[1], latency: Number(match[2]), session: item.id }] : [] }))
+  const report = Array.from(new Set(runs.map(run => run.model))).map(model => { const modelRuns = runs.filter(run => run.model === model); const latencies = modelRuns.map(run => run.latency); return { model, executions: modelRuns.length, sessions: new Set(modelRuns.map(run => run.session)).size, average: Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length), minimum: Math.min(...latencies), maximum: Math.max(...latencies) } }).sort((a, b) => a.average - b.average)
+  const totalLatency = runs.reduce((sum, run) => sum + run.latency, 0)
+  const overallAverage = runs.length ? Math.round(totalLatency / runs.length) : 0
+  const slowestAverage = Math.max(...report.map(item => item.average), 1)
+  return <div className="page reportsPage"><Heading eyebrow="MODEL INTELLIGENCE" title="Relatórios de desempenho" text="Compare utilização e latência dos modelos executados no Playground." />
+    <section className="reportsMetrics"><Metric icon={BrainCircuit} label="Modelos utilizados" value={String(report.length).padStart(2, '0')} detail="com execuções registradas" tone="blue" /><Metric icon={Activity} label="Total de respostas" value={String(runs.length).padStart(2, '0')} detail={`${sessions.length} sessões no histórico`} tone="green" /><Metric icon={Clock3} label="Latência média" value={runs.length ? `${overallAverage} ms` : '—'} detail="todas as execuções" tone="coral" /></section>
+    {report.length ? <section className="performancePanel panel"><div className="reportTitle"><div><span className="eyebrow">COMPARATIVO</span><h2>Desempenho por modelo</h2></div><small>Menor latência média primeiro</small></div><div className="performanceTable"><div className="performanceRow performanceHead"><span>Modelo</span><span>Uso</span><span>Sessões</span><span>Média</span><span>Faixa</span></div>{report.map((item, index) => <div className="performanceRow" key={item.model}><div><b>{item.model}</b>{index === 0 && <em>Mais rápido</em>}<i><span style={{ width: `${Math.max(8, item.average / slowestAverage * 100)}%` }} /></i></div><strong>{item.executions} respostas</strong><span>{item.sessions}</span><code>{item.average} ms</code><small>{item.minimum}–{item.maximum} ms</small></div>)}</div></section> : <section className="panel reportEmpty"><BarChart3 /><b>Ainda não há execuções para comparar</b><p>Envie perguntas no Playground. Os relatórios serão preenchidos após as respostas dos modelos.</p></section>}
+  </div>
+}
+
 function Models({ models, onChanged }: { models: Model[]; onChanged: () => Promise<void> }) {
   const [provider, setProvider] = useState<CatalogProvider>('openrouter')
   const [query, setQuery] = useState('')

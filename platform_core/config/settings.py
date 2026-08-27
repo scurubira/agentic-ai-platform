@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     model_catalog_timeout_seconds: int = Field(default=10, alias="MODEL_CATALOG_TIMEOUT_SECONDS", ge=1)
     dynamic_model_config_path: Path = Field(default=Path("data/models.json"), alias="DYNAMIC_MODEL_CONFIG_PATH")
     agent_config_path: Path = Field(default=Path("data/agents.json"), alias="AGENT_CONFIG_PATH")
+    wiki_config_path: Path = Field(default=Path("data/wiki.json"), alias="WIKI_CONFIG_PATH")
+    wiki_repository_root: Path = Field(default=Path("."), alias="WIKI_REPOSITORY_ROOT")
     healthcheck_timeout_seconds: int = Field(default=3, alias="HEALTHCHECK_TIMEOUT_SECONDS")
 
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
