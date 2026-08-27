@@ -1,16 +1,18 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowUpRight, BarChart3, Bot, Boxes, BrainCircuit, Check, ChevronRight, Clock3,
-  CircleAlert, Cpu, Database, Gauge, Menu, MessageSquareText, Network,
+  Activity, ArrowUpRight, BarChart3, BookOpen, Bot, Boxes, BrainCircuit, Check, ChevronRight, Clock3,
+  CircleAlert, Cpu, Database, FileText, FolderGit2, Gauge, Link2, Menu, MessageSquareText, Network,
   PanelLeftClose, Play, Plus, RefreshCw, Search, Send, ServerCog, Settings2, ShieldCheck, Sparkles,
-  TerminalSquare, TestTube2, Trash2, Workflow, X, type LucideIcon,
+  TerminalSquare, TestTube2, Trash2, Upload, Workflow, X, type LucideIcon,
 } from 'lucide-react'
 import './App.css'
 
-type Section = 'overview' | 'playground' | 'reports' | 'agents' | 'models' | 'integrations' | 'governance'
+type Section = 'overview' | 'playground' | 'reports' | 'wiki' | 'agents' | 'models' | 'integrations' | 'governance'
 type Model = { alias: string; name: string; provider: string; default: boolean }
 type Agent = { id: string; name: string; description: string; model_alias: string; capabilities: string[]; protected: boolean }
 type CatalogAgent = Agent & { installed: boolean }
+type WikiPage = { id: string; title: string; content: string; source: string; tags: string[]; created_at: string; updated_at: string }
+type WikiSource = { content: string; source: string; score: number }
 type CatalogProvider = 'openrouter' | 'huggingface'
 type CatalogModel = { provider: CatalogProvider; model_id: string; name: string; description: string; context_length: number | null; input_price: string | null; output_price: string | null; downloads: number | null; likes: number | null }
 type Overview = {
@@ -45,6 +47,7 @@ const emptyOverview: Overview = {
 const nav: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Visão geral', icon: Gauge }, { id: 'playground', label: 'Playground', icon: MessageSquareText },
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+  { id: 'wiki', label: 'LLM Wiki', icon: BookOpen },
   { id: 'agents', label: 'Agentes', icon: Bot }, { id: 'models', label: 'Modelos', icon: BrainCircuit }, { id: 'integrations', label: 'Integrações', icon: Network },
   { id: 'governance', label: 'Governança', icon: ShieldCheck },
 ]
@@ -102,6 +105,7 @@ export default function App() {
         {section === 'overview' && <OverviewPage data={overview} ready={ready} loading={loading} go={go} />}
         {section === 'playground' && <Playground models={overview.models} available={!error} />}
         {section === 'reports' && <ModelReports />}
+        {section === 'wiki' && <Wiki models={overview.models} available={!error} />}
         {section === 'agents' && <Agents models={overview.models} available={!error} />}
         {section === 'models' && <Models models={overview.models} onChanged={load} />}
         {section === 'integrations' && <Integrations data={overview} ready={ready} />}
@@ -141,6 +145,47 @@ function Metric({ icon: Icon, label, value, detail, tone }: { icon: LucideIcon; 
 function PanelHead({ eyebrow, title, extra }: { eyebrow: string; title: string; extra: ReactNode }) { return <div className="panelHead"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div>{extra}</div> }
 function Service({ icon: Icon, name, detail, ok, optional }: { icon: LucideIcon; name: string; detail: string; ok: boolean; optional?: boolean }) { return <div className="service"><span className="serviceIcon"><Icon /></span><div><b>{name}</b><small>{detail}</small></div><em className={ok ? 'online' : ''}>{ok ? <><Check /> Online</> : optional ? 'Não configurado' : 'Indisponível'}</em></div> }
 function ToolSection() { return <section className="tools"><div><span className="eyebrow">ACESSO RÁPIDO</span><h2>Ferramentas da plataforma</h2></div><div className="toolGrid">{tools.map(({ icon: Icon, ...tool }) => <a className="tool" href={tool.href} target="_blank" key={tool.name}><span><Icon /></span><div><b>{tool.name}</b><small>{tool.detail}</small></div><ArrowUpRight /></a>)}</div></section> }
+
+function Wiki({ models, available }: { models: Model[]; available: boolean }) {
+  const emptyDraft = { id: '', title: '', content: '', tags: '', source: 'manual' }
+  const [pages, setPages] = useState<WikiPage[]>([]); const [stats, setStats] = useState({ pages: 0, chunks: 0 })
+  const [draft, setDraft] = useState(emptyDraft); const [query, setQuery] = useState(''); const [preview, setPreview] = useState(false)
+  const [url, setUrl] = useState(''); const [repositoryPath, setRepositoryPath] = useState('.')
+  const [question, setQuestion] = useState(''); const [modelAlias, setModelAlias] = useState('fast'); const [answer, setAnswer] = useState(''); const [sources, setSources] = useState<WikiSource[]>([])
+  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string }>()
+
+  async function request(path: string, options?: RequestInit) {
+    const response = await fetch(path, options); const body = response.status === 204 ? undefined : await response.json()
+    if (!response.ok) throw new Error(body?.detail || `Falha HTTP ${response.status}`)
+    return body
+  }
+  function selectPage(page: WikiPage) { setDraft({ id: page.id, title: page.title, content: page.content, tags: page.tags.join(', '), source: page.source }); setPreview(false); setNotice(undefined) }
+  async function loadWiki(search = '') { const data = await request(`/api/v1/wiki?query=${encodeURIComponent(search)}`); setPages(data.pages); setStats(data.stats) }
+  useEffect(() => {
+    if (!available) return
+    let active = true
+    fetch('/api/v1/wiki').then(async response => { const body = await response.json(); if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`); if (active) { setPages(body.pages); setStats(body.stats) } }).catch(reason => { if (active) setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Wiki indisponível.' }) })
+    return () => { active = false }
+  }, [available])
+  const selectedModel = models.some(item => item.alias === modelAlias) ? modelAlias : models.find(item => item.default)?.alias || models[0]?.alias || ''
+  async function execute(task: () => Promise<void>, success: string) { setBusy(true); setNotice(undefined); try { await task(); setNotice({ kind: 'ok', text: success }) } catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Operação não concluída.' }) } finally { setBusy(false) } }
+  function savePage(event: FormEvent) { event.preventDefault(); void execute(async () => { const payload = { title: draft.title, content: draft.content, tags: draft.tags.split(',').map(tag => tag.trim()).filter(Boolean) }; const page = await request(draft.id ? `/api/v1/wiki/pages/${draft.id}` : '/api/v1/wiki/pages', { method: draft.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); selectPage(page); await loadWiki() }, draft.id ? 'Página atualizada.' : 'Página criada e indexada.') }
+  function deletePage() { if (draft.id) void execute(async () => { await request(`/api/v1/wiki/pages/${draft.id}`, { method: 'DELETE' }); setDraft(emptyDraft); await loadWiki() }, 'Página removida da Wiki.') }
+  function importFile(file?: File) { if (file) void execute(async () => { const content = await file.text(); const title = file.name.replace(/\.(md|markdown|txt)$/i, '').replace(/[-_]/g, ' '); const page = await request('/api/v1/wiki/import/file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, title, content, tags: ['upload'] }) }); selectPage(page); await loadWiki() }, `${file.name} importado.`) }
+  function importUrl(event: FormEvent) { event.preventDefault(); void execute(async () => { const page = await request('/api/v1/wiki/import/url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, tags: ['web'] }) }); setUrl(''); selectPage(page); await loadWiki() }, 'URL importada e indexada.') }
+  function importRepository(event: FormEvent) { event.preventDefault(); void execute(async () => { const result = await request('/api/v1/wiki/import/repository', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ relative_path: repositoryPath }) }); await loadWiki(); setNotice({ kind: 'ok', text: `${result.imported} arquivos indexados.` }) }, 'Repositório indexado.') }
+  function ask(event: FormEvent) { event.preventDefault(); setBusy(true); setNotice(undefined); setAnswer(''); request('/api/v1/wiki/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question, model_alias: selectedModel }) }).then(result => { setAnswer(result.answer); setSources(result.sources) }).catch(reason => setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Consulta não concluída.' })).finally(() => setBusy(false)) }
+
+  return <div className="page wikiPage">
+    <Heading eyebrow="KNOWLEDGE SYSTEM" title="LLM Wiki" text="Construa uma base viva, importe conhecimento e converse com respostas ancoradas nas fontes." action={<div className="wikiStats"><span><b>{stats.pages}</b> páginas</span><span><b>{stats.chunks}</b> chunks</span></div>} />
+    {notice && <div className={`governanceNotice ${notice.kind}`}><span>{notice.kind === 'ok' ? <Check /> : <CircleAlert />}</span>{notice.text}</div>}
+    <div className="wikiWorkspace">
+      <aside className="wikiLibrary panel"><div className="wikiPanelTitle"><span className="eyebrow">BIBLIOTECA</span><button className="icon" onClick={() => { setDraft(emptyDraft); setPreview(false) }} title="Nova página" aria-label="Nova página"><Plus /></button></div><form className="wikiSearch" onSubmit={event => { event.preventDefault(); void loadWiki(query) }}><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar páginas" /></form><div className="wikiPages">{pages.map(page => <button className={draft.id === page.id ? 'active' : ''} onClick={() => selectPage(page)} key={page.id}><FileText /><span><b>{page.title}</b><small>{page.source}</small></span></button>)}{pages.length === 0 && <div className="wikiBlank"><BookOpen /><p>Nenhuma página encontrada.</p></div>}</div></aside>
+      <form className="wikiEditor panel" onSubmit={savePage}><div className="wikiEditorTop"><div className="wikiModes"><button type="button" className={!preview ? 'active' : ''} onClick={() => setPreview(false)}>Editar</button><button type="button" className={preview ? 'active' : ''} onClick={() => setPreview(true)}>Prévia</button></div><div>{draft.id && <button type="button" className="icon danger" onClick={deletePage} title="Excluir página" aria-label="Excluir página"><Trash2 /></button>}<button className="primary" disabled={busy || !draft.title.trim() || !draft.content.trim()}><Check /> Salvar</button></div></div><input className="wikiTitle" value={draft.title} onChange={event => setDraft(old => ({ ...old, title: event.target.value }))} placeholder="Título da página" maxLength={160} />{preview ? <article className="wikiPreview"><h1>{draft.title || 'Sem título'}</h1><pre>{draft.content || 'Nada para visualizar.'}</pre></article> : <textarea className="wikiContent" value={draft.content} onChange={event => setDraft(old => ({ ...old, content: event.target.value }))} placeholder="# Comece a escrever em Markdown…" />}<div className="wikiMeta"><label>Tags<input value={draft.tags} onChange={event => setDraft(old => ({ ...old, tags: event.target.value }))} placeholder="rag, arquitetura, produto" /></label><span>Fonte: <code>{draft.source}</code></span></div></form>
+      <aside className="wikiSide"><section className="panel wikiImport"><PanelHead eyebrow="INGESTÃO" title="Adicionar conhecimento" extra={<Upload />} /><div className="wikiImportBody"><label className="fileAction"><Upload /><span><b>Arquivo Markdown</b><small>.md, .markdown ou .txt</small></span><input type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" onChange={event => importFile(event.target.files?.[0])} /></label><form onSubmit={importUrl}><label>URL pública<div><Link2 /><input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://docs.exemplo.com" required /></div></label><button className="secondary" disabled={busy}>Importar URL</button></form><form onSubmit={importRepository}><label>Repositório local<div><FolderGit2 /><input value={repositoryPath} onChange={event => setRepositoryPath(event.target.value)} placeholder="docs" required /></div></label><button className="secondary" disabled={busy}>Indexar caminho</button></form></div></section><section className="panel wikiAsk"><PanelHead eyebrow="RAG ASSISTANT" title="Perguntar à Wiki" extra={<Sparkles />} /><form onSubmit={ask}><label>Modelo<select value={selectedModel} onChange={event => setModelAlias(event.target.value)}>{models.map(model => <option value={model.alias} key={model.alias}>{model.alias}</option>)}</select></label><textarea value={question} onChange={event => setQuestion(event.target.value)} placeholder="O que você quer saber?" required /><button className="primary" disabled={busy || !question.trim() || !selectedModel}><Send /> Consultar</button></form>{answer && <div className="wikiAnswer"><p>{answer}</p><div>{sources.map(source => <span key={source.source}><FileText />{source.source}</span>)}</div></div>}</section></aside>
+    </div>
+  </div>
+}
 
 function Agents({ models, available }: { models: Model[]; available: boolean }) {
   const [installed, setInstalled] = useState<Agent[]>([])
@@ -223,9 +268,10 @@ function ModelReports() {
   const totalLatency = runs.reduce((sum, run) => sum + run.latency, 0)
   const overallAverage = runs.length ? Math.round(totalLatency / runs.length) : 0
   const slowestAverage = Math.max(...report.map(item => item.average), 1)
+  const mostExecutions = Math.max(...report.map(item => item.executions), 1)
   return <div className="page reportsPage"><Heading eyebrow="MODEL INTELLIGENCE" title="Relatórios de desempenho" text="Compare utilização e latência dos modelos executados no Playground." />
     <section className="reportsMetrics"><Metric icon={BrainCircuit} label="Modelos utilizados" value={String(report.length).padStart(2, '0')} detail="com execuções registradas" tone="blue" /><Metric icon={Activity} label="Total de respostas" value={String(runs.length).padStart(2, '0')} detail={`${sessions.length} sessões no histórico`} tone="green" /><Metric icon={Clock3} label="Latência média" value={runs.length ? `${overallAverage} ms` : '—'} detail="todas as execuções" tone="coral" /></section>
-    {report.length ? <section className="performancePanel panel"><div className="reportTitle"><div><span className="eyebrow">COMPARATIVO</span><h2>Desempenho por modelo</h2></div><small>Menor latência média primeiro</small></div><div className="performanceTable"><div className="performanceRow performanceHead"><span>Modelo</span><span>Uso</span><span>Sessões</span><span>Média</span><span>Faixa</span></div>{report.map((item, index) => <div className="performanceRow" key={item.model}><div><b>{item.model}</b>{index === 0 && <em>Mais rápido</em>}<i><span style={{ width: `${Math.max(8, item.average / slowestAverage * 100)}%` }} /></i></div><strong>{item.executions} respostas</strong><span>{item.sessions}</span><code>{item.average} ms</code><small>{item.minimum}–{item.maximum} ms</small></div>)}</div></section> : <section className="panel reportEmpty"><BarChart3 /><b>Ainda não há execuções para comparar</b><p>Envie perguntas no Playground. Os relatórios serão preenchidos após as respostas dos modelos.</p></section>}
+    {report.length ? <><div className="chartsGrid"><section className="chartPanel panel"><div className="chartTitle"><span className="eyebrow">VELOCIDADE</span><h2>Latência média</h2><small>milissegundos · menor é melhor</small></div><div className="latencyChart">{report.map(item => <div className="chartBar" key={item.model}><label title={item.model}>{item.model}</label><div><span style={{ width: `${Math.max(5, item.average / slowestAverage * 100)}%` }} /></div><b>{item.average} ms</b></div>)}</div></section><section className="chartPanel panel"><div className="chartTitle"><span className="eyebrow">UTILIZAÇÃO</span><h2>Respostas por modelo</h2><small>participação nas execuções</small></div><div className="usageChart">{report.map(item => <div className="usageColumn" key={item.model}><div><b>{item.executions}</b><span style={{ height: `${Math.max(8, item.executions / mostExecutions * 100)}%` }} /></div><label title={item.model}>{item.model}</label><small>{Math.round(item.executions / runs.length * 100)}%</small></div>)}</div></section></div><section className="performancePanel panel"><div className="reportTitle"><div><span className="eyebrow">COMPARATIVO</span><h2>Desempenho por modelo</h2></div><small>Menor latência média primeiro</small></div><div className="performanceTable"><div className="performanceRow performanceHead"><span>Modelo</span><span>Uso</span><span>Sessões</span><span>Média</span><span>Faixa</span></div>{report.map((item, index) => <div className="performanceRow" key={item.model}><div><b>{item.model}</b>{index === 0 && <em>Mais rápido</em>}<i><span style={{ width: `${Math.max(8, item.average / slowestAverage * 100)}%` }} /></i></div><strong>{item.executions} respostas</strong><span>{item.sessions}</span><code>{item.average} ms</code><small>{item.minimum}–{item.maximum} ms</small></div>)}</div></section></> : <section className="panel reportEmpty"><BarChart3 /><b>Ainda não há execuções para comparar</b><p>Envie perguntas no Playground. Os relatórios serão preenchidos após as respostas dos modelos.</p></section>}
   </div>
 }
 

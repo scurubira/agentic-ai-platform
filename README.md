@@ -177,6 +177,29 @@ Endpoints equivalentes:
 - `POST /api/v1/platform/agents/{agent_id}/install`
 - `DELETE /api/v1/platform/agents/{agent_id}`
 
+### LLM Wiki e RAG
+
+Abra **LLM Wiki** para criar páginas Markdown, importar arquivos `.md`/`.txt`, capturar conteúdo de URLs públicas ou indexar a documentação do repositório local. A biblioteca permite busca textual, edição, prévia e perguntas respondidas pelo Inference Gateway com os trechos de origem.
+
+O conteúdo e o índice lexical são persistidos em `data/wiki.json`. `WIKI_REPOSITORY_ROOT` limita a raiz disponível para indexação; somente arquivos `.md` e `.txt` são lidos, com limite de 100 arquivos por operação. Diretórios ocultos, dependências e `data/` são ignorados. Reindexar a mesma fonte atualiza a página existente.
+
+Configuração:
+
+- `WIKI_CONFIG_PATH=data/wiki.json`: registro persistente da Wiki
+- `WIKI_REPOSITORY_ROOT=.`: raiz permitida para indexação local
+- `APP_MAX_REQUEST_SIZE_BYTES=1048576`: comporta documentos textuais de até 500 KB
+
+Endpoints:
+
+- `GET /api/v1/wiki`
+- `POST /api/v1/wiki/pages`
+- `PUT /api/v1/wiki/pages/{page_id}`
+- `DELETE /api/v1/wiki/pages/{page_id}`
+- `POST /api/v1/wiki/import/file`
+- `POST /api/v1/wiki/import/url`
+- `POST /api/v1/wiki/import/repository`
+- `POST /api/v1/wiki/ask`
+
 ### Observabilidade com Langfuse
 
 A stack completa já habilita o Langfuse na API containerizada:
@@ -211,6 +234,8 @@ make lint
 - `GET /api/v1/platform/overview`
 - `GET /api/v1/platform/models/discover`
 - `POST /api/v1/platform/models`
+- `GET /api/v1/wiki`
+- `POST /api/v1/wiki/ask`
 
 Exemplo:
 

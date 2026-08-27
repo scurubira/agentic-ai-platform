@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
     app_cors_origins: str = Field(default="http://localhost:3000", alias="APP_CORS_ORIGINS")
-    max_request_size_bytes: int = Field(default=65536, alias="APP_MAX_REQUEST_SIZE_BYTES")
+    max_request_size_bytes: int = Field(default=1_048_576, alias="APP_MAX_REQUEST_SIZE_BYTES")
     max_message_chars: int = Field(default=4000, alias="APP_MAX_MESSAGE_CHARS")
     request_timeout_seconds: int = Field(default=60, alias="APP_REQUEST_TIMEOUT_SECONDS")
 
