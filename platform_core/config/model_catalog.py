@@ -75,7 +75,6 @@ class ModelCatalogService:
             "sort": "trendingScore",
             "direction": -1,
             "limit": limit,
-            "expand[]": "downloads,likes,pipeline_tag",
         }
         if query:
             params["search"] = query

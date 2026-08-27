@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from litellm.exceptions import RateLimitError
 from pytest import MonkeyPatch
 
 from platform_core.config.model_registry import ModelRegistry
@@ -73,3 +74,25 @@ def test_reasoning_alias_uses_openrouter_provider(monkeypatch: MonkeyPatch) -> N
 
     assert target.provider == "openrouter"
     assert target.physical_model == "openrouter/qwen/qwen3-next-80b-a3b-thinking"
+
+
+def test_openrouter_rate_limit_returns_actionable_app_error(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def rate_limited_completion(**kwargs: object) -> object:
+        del kwargs
+        raise RateLimitError("upstream rate limit", llm_provider="openrouter", model="qwen/test")
+
+    monkeypatch.setattr("platform_core.inference.gateway.acompletion", rate_limited_completion)
+    gateway = LiteLLMInferenceGateway(Settings(OPENROUTER_API_KEY="test-key"), _openrouter_registry(tmp_path))
+
+    with pytest.raises(AppError, match="temporarily rate-limited") as error:
+        asyncio.run(
+            gateway.complete(
+                model_alias="openrouter-free",
+                conversation=[{"role": "user", "content": "Olá"}],
+            )
+        )
+
+    assert error.value.status_code == 429

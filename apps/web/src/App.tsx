@@ -2,13 +2,15 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowUpRight, Bot, Boxes, BrainCircuit, Check, ChevronRight, Clock3,
   CircleAlert, Cpu, Database, Gauge, Menu, MessageSquareText, Network,
-  PanelLeftClose, Play, RefreshCw, Send, ServerCog, Settings2, ShieldCheck, Sparkles,
+  PanelLeftClose, Play, Plus, RefreshCw, Search, Send, ServerCog, Settings2, ShieldCheck, Sparkles,
   TerminalSquare, TestTube2, Trash2, Workflow, X, type LucideIcon,
 } from 'lucide-react'
 import './App.css'
 
 type Section = 'overview' | 'playground' | 'models' | 'integrations' | 'governance'
 type Model = { alias: string; name: string; provider: string; default: boolean }
+type CatalogProvider = 'openrouter' | 'huggingface'
+type CatalogModel = { provider: CatalogProvider; model_id: string; name: string; description: string; context_length: number | null; input_price: string | null; output_price: string | null; downloads: number | null; likes: number | null }
 type Overview = {
   environment: string
   agent: { name: string; routes: string[] }
@@ -96,7 +98,7 @@ export default function App() {
         {error && <div className="alert"><CircleAlert /><span><b>API fora de alcance.</b> Inicie o backend em localhost:8000.</span><button onClick={() => void load()}>Tentar novamente</button></div>}
         {section === 'overview' && <OverviewPage data={overview} ready={ready} loading={loading} go={go} />}
         {section === 'playground' && <Playground models={overview.models} available={!error} />}
-        {section === 'models' && <Models models={overview.models} />}
+        {section === 'models' && <Models models={overview.models} onChanged={load} />}
         {section === 'integrations' && <Integrations data={overview} ready={ready} />}
         {section === 'governance' && <Governance available={!error} />}
       </div>
@@ -156,7 +158,50 @@ function Playground({ models, available }: { models: Model[]; available: boolean
     <aside className="runConfig"><PanelHead eyebrow="EXECUÇÃO" title="Configuração" extra={<Settings2 />} /><label>Modelo<select value={model} onChange={e => setModel(e.target.value)}>{models.length ? models.map(item => <option value={item.alias} key={item.alias}>{item.alias} · {item.name}</option>) : <option>fast</option>}</select></label><div className="readout"><span>Agente</span><b>supervisor</b></div><div className="readout"><span>Sessão</span><b>{session ? `${session.slice(0, 10)}…` : 'nova sessão'}</b></div><div className="flow"><span>Fluxo atual</span><div><b>START</b><i /><b>SUPERVISOR</b><i /><b>LLM</b><i /><b>END</b></div></div><div className="questionHistory"><div className="historyHead"><span><Clock3 /> Histórico de perguntas</span>{questionHistory.length > 0 && <button type="button" onClick={() => setQuestionHistory([])}>Limpar</button>}</div><div className="historyList">{questionHistory.map(item => <button type="button" key={item.id} onClick={() => setInput(item.content)} title="Usar esta pergunta novamente"><span>{item.content}</span><time>{new Date(item.askedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></button>)}{questionHistory.length === 0 && <p>As perguntas enviadas aparecerão aqui.</p>}</div></div></aside>
   </div></div>
 }
-function Models({ models }: { models: Model[] }) { return <div className="page"><Heading eyebrow="MODEL REGISTRY" title="Modelos" text="Inventário de aliases e provedores disponíveis para os agentes." action={<a className="secondary" href="http://localhost:8000/docs" target="_blank"><TerminalSquare /> Abrir API</a>} /><section className="panel table"><div className="tableRow tableHead"><span>Alias</span><span>Modelo físico</span><span>Provedor</span><span>Estado</span></div>{models.length ? models.map(item => <div className="tableRow" key={item.alias}><span><i><BrainCircuit /></i><b>{item.alias}</b></span><code>{item.name}</code><em>{item.provider}</em><strong className={item.default ? 'default' : ''}>{item.default ? 'Padrão' : 'Disponível'}</strong></div>) : <div className="empty"><CircleAlert /><b>Registro indisponível</b><small>Conecte a API para listar os modelos.</small></div>}</section><div className="note"><Sparkles /><div><b>Aliases desacoplam agentes dos modelos físicos.</b><p>Troque o backend no registro sem alterar a lógica do supervisor.</p></div></div></div> }
+function Models({ models, onChanged }: { models: Model[]; onChanged: () => Promise<void> }) {
+  const [provider, setProvider] = useState<CatalogProvider>('openrouter')
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CatalogModel[]>([])
+  const [selected, setSelected] = useState<CatalogModel>()
+  const [alias, setAlias] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string }>()
+
+  function suggestedAlias(model: CatalogModel) {
+    return model.model_id.split('/').at(-1)?.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').slice(0, 64) || ''
+  }
+  async function searchModels(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setNotice(undefined); setSelected(undefined)
+    try {
+      const params = new URLSearchParams({ provider, query, limit: '20' })
+      const response = await fetch(`/api/v1/platform/models/discover?${params}`); const body = await response.json()
+      if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`)
+      setResults(body.models)
+      if (!body.models.length) setNotice({ kind: 'error', text: 'Nenhum modelo encontrado para esta busca.' })
+    } catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Falha ao consultar o catálogo.' }) }
+    finally { setBusy(false) }
+  }
+  async function addModel() {
+    if (!selected || !alias.trim()) return
+    setBusy(true); setNotice(undefined)
+    try {
+      const response = await fetch('/api/v1/platform/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: alias.trim(), provider: selected.provider, model_id: selected.model_id }) }); const body = await response.json()
+      if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`)
+      await onChanged(); setNotice({ kind: 'ok', text: `Modelo ${body.alias} adicionado ao registro.` }); setSelected(undefined); setAlias('')
+    } catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível adicionar o modelo.' }) }
+    finally { setBusy(false) }
+  }
+  return <div className="page modelPage">
+    <Heading eyebrow="MODEL REGISTRY" title="Modelos" text="Busque novos modelos nos catálogos públicos e registre aliases para uso imediato pelos agentes." action={<a className="secondary" href="http://localhost:8000/docs" target="_blank"><TerminalSquare /> Abrir API</a>} />
+    <section className="catalogWorkbench"><div className="catalogTitle"><div><span className="eyebrow">DESCOBERTA</span><h2>Catálogo de provedores</h2></div><div className="providerSwitch"><button className={provider === 'openrouter' ? 'active' : ''} onClick={() => { setProvider('openrouter'); setResults([]) }}>OpenRouter</button><button className={provider === 'huggingface' ? 'active' : ''} onClick={() => { setProvider('huggingface'); setResults([]) }}>Hugging Face</button></div></div>
+      <form className="catalogSearch" onSubmit={searchModels}><label><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar por organização, família ou capacidade" /></label><button className="primary" disabled={busy}><Search /> {busy ? 'Buscando' : 'Buscar modelos'}</button></form>
+      {notice && <div className={`catalogNotice ${notice.kind}`}><span>{notice.kind === 'ok' ? <Check /> : <CircleAlert />}</span>{notice.text}</div>}
+      <div className="catalogResults">{results.map(item => <button className={selected?.model_id === item.model_id ? 'selected' : ''} key={`${item.provider}:${item.model_id}`} onClick={() => { setSelected(item); setAlias(suggestedAlias(item)); setNotice(undefined) }}><span><b>{item.name}</b><code>{item.model_id}</code></span><span className="catalogMeta">{item.context_length ? `${item.context_length.toLocaleString('pt-BR')} ctx` : item.downloads != null ? `${item.downloads.toLocaleString('pt-BR')} downloads` : item.provider}{item.likes != null && ` · ${item.likes} likes`}</span><ChevronRight /></button>)}{results.length === 0 && <div className="empty catalogEmpty"><Search /><b>Consulte um catálogo</b><small>Use termos como Qwen, Llama, coding ou instruct.</small></div>}</div>
+      {selected && <div className="addModelBar"><div><small>MODELO SELECIONADO</small><b>{selected.model_id}</b></div><label>Alias<input value={alias} onChange={event => setAlias(event.target.value)} maxLength={64} pattern="[a-z0-9][a-z0-9_-]*" /></label><button className="primary" onClick={() => void addModel()} disabled={busy || !alias.trim()}><Plus /> Adicionar</button></div>}
+    </section>
+    <section className="panel table"><div className="tableRow tableHead"><span>Alias</span><span>Modelo físico</span><span>Provedor</span><span>Estado</span></div>{models.length ? models.map(item => <div className="tableRow" key={item.alias}><span><i><BrainCircuit /></i><b>{item.alias}</b></span><code>{item.name}</code><em>{item.provider}</em><strong className={item.default ? 'default' : ''}>{item.default ? 'Padrão' : 'Disponível'}</strong></div>) : <div className="empty"><CircleAlert /><b>Registro indisponível</b><small>Conecte a API para listar os modelos.</small></div>}</section>
+  </div>
+}
 function Integrations({ data, ready }: { data: Overview; ready: Readiness | null }) {
   const items = [{ name: 'LiteLLM', type: 'Inference gateway', detail: data.services.inference.backend, icon: Cpu, active: ready?.checks.inference.ok }, { name: 'PostgreSQL', type: 'State & memory', detail: data.services.memory.backend, icon: Database, active: ready?.checks.database.ok }, { name: 'Langfuse', type: 'Observabilidade', detail: ready?.checks.observability?.ok ? 'Autenticado pela plataforma' : data.services.observability.enabled ? 'Falha de autenticação' : 'Configuração opcional', icon: Activity, active: ready?.checks.observability?.ok }, { name: 'MCP', type: 'Tool gateway', detail: `${data.services.mcp.servers.length} servidores registrados`, icon: Network, active: data.services.mcp.servers.length > 0 }]
   return <div className="page"><Heading eyebrow="ECOSSISTEMA" title="Integrações" text="Conectores de inferência, persistência, ferramentas e observabilidade." /><div className="integrationGrid">{items.map(({ icon: Icon, ...item }) => <article className="integration" key={item.name}><span><Icon /></span><div><small>{item.type}</small><h2>{item.name}</h2><p>{item.detail}</p></div><em className={item.active ? 'on' : ''}>{item.active ? 'Ativa' : 'Inativa'}</em></article>)}</div><ToolSection /></div>

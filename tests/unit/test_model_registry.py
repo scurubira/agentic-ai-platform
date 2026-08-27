@@ -65,3 +65,18 @@ def test_model_registry_rejects_duplicate_alias(tmp_path: Path) -> None:
 
     with pytest.raises(AppError, match="already exists"):
         registry.add(alias="fast", provider="openrouter", model_id="qwen/qwen3-8b")
+
+
+def test_model_registry_does_not_persist_static_provider_models(tmp_path: Path) -> None:
+    config_path = tmp_path / "litellm.yaml"
+    dynamic_path = tmp_path / "models.json"
+    config_path.write_text(
+        "model_list:\n  - model_name: reasoning\n    litellm_params:\n      model: openrouter/qwen/static\n",
+        encoding="utf-8",
+    )
+    registry = ModelRegistry(config_path, dynamic_path)
+
+    registry.add(alias="dynamic", provider="openrouter", model_id="qwen/dynamic")
+
+    assert '"alias": "dynamic"' in dynamic_path.read_text(encoding="utf-8")
+    assert '"alias": "reasoning"' not in dynamic_path.read_text(encoding="utf-8")

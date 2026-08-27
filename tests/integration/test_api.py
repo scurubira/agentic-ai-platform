@@ -7,6 +7,7 @@ from pytest import MonkeyPatch
 
 from apps.api.main import create_app
 from mcp_servers.news.server import NewsMCPServer
+from platform_core.config.model_catalog import ModelCatalogService
 
 
 def test_health_and_ready_endpoints(monkeypatch: MonkeyPatch) -> None:
@@ -42,6 +43,59 @@ def test_platform_overview_exposes_sanitized_inventory(monkeypatch: MonkeyPatch)
     assert {model["alias"] for model in payload["models"]} == {"fast", "openrouter-free", "reasoning"}
     assert payload["services"]["memory"] == {"backend": "memory"}
     assert "password" not in response.text.lower()
+
+
+def test_model_discovery_returns_normalized_catalog(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+
+    async def fake_search(
+        self: ModelCatalogService,
+        *,
+        provider: str,
+        query: str,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        del self
+        assert (provider, query, limit) == ("openrouter", "qwen", 5)
+        return [
+            {
+                "provider": "openrouter",
+                "model_id": "qwen/qwen3-8b",
+                "name": "Qwen 3 8B",
+                "description": "Reasoning model",
+                "context_length": 131072,
+                "input_price": "0.0000001",
+                "output_price": "0.0000002",
+                "downloads": None,
+                "likes": None,
+            }
+        ]
+
+    monkeypatch.setattr(ModelCatalogService, "search", fake_search)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/platform/models/discover?provider=openrouter&query=qwen&limit=5")
+
+    assert response.status_code == 200
+    assert response.json()["models"][0]["model_id"] == "qwen/qwen3-8b"
+
+
+def test_added_model_appears_in_platform_inventory(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("DYNAMIC_MODEL_CONFIG_PATH", str(tmp_path / "models.json"))
+
+    with TestClient(create_app()) as client:
+        created = client.post(
+            "/api/v1/platform/models",
+            json={"alias": "qwen-hf", "provider": "huggingface", "model_id": "Qwen/Qwen3-8B"},
+        )
+        overview_response = client.get("/api/v1/platform/overview")
+
+    assert created.status_code == 201
+    assert created.json()["alias"] == "qwen-hf"
+    assert any(model["alias"] == "qwen-hf" for model in overview_response.json()["models"])
 
 
 def test_chat_endpoint_returns_structured_response(monkeypatch: MonkeyPatch) -> None:

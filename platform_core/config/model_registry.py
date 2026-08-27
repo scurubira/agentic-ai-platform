@@ -32,7 +32,9 @@ class ModelRegistry:
         self._config_path = config_path
         self._dynamic_config_path = dynamic_config_path
         self._models = self._load_models(config_path)
-        self._models.update(self._load_dynamic_models())
+        dynamic_models = self._load_dynamic_models()
+        self._dynamic_aliases = set(dynamic_models)
+        self._models.update(dynamic_models)
 
     def list(self) -> list[ModelTarget]:
         return sorted(self._models.values(), key=lambda model: model.alias)
@@ -64,6 +66,7 @@ class ModelRegistry:
             provider=normalized_provider,
         )
         self._models[target.alias] = target
+        self._dynamic_aliases.add(target.alias)
         self._save_dynamic_models()
         return target
 
@@ -92,7 +95,7 @@ class ModelRegistry:
                 "provider": model.provider,
             }
             for model in self.list()
-            if model.provider in _DYNAMIC_PROVIDERS
+            if model.alias in self._dynamic_aliases
         ]
         self._dynamic_config_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = self._dynamic_config_path.with_suffix(".tmp")

@@ -71,9 +71,12 @@ Principais variáveis:
 - `MODEL_BACKEND=litellm`
 - `DEFAULT_MODEL_ALIAS=fast`
 - `MODEL_MAX_TOKENS=4096`: limita a saída enviada aos provedores e controla custo
+- `MODEL_CATALOG_TIMEOUT_SECONDS=10`: timeout das buscas nos catálogos externos
+- `DYNAMIC_MODEL_CONFIG_PATH=data/models.json`: registro persistente dos modelos adicionados
 - `REASONING_MODEL_ID=qwen/qwen3-next-80b-a3b-thinking`: modelo usado pelo alias `reasoning` via OpenRouter
 - `OPENROUTER_API_KEY`: chave criada em https://openrouter.ai/settings/keys
 - `OPENROUTER_FREE_MODEL_ID=openrouter/free`: roteia automaticamente entre modelos gratuitos; também aceita um ID `:free`
+- `HF_TOKEN`: token necessário para executar modelos pelo Hugging Face Inference Provider
 - `OLLAMA_BASE_URL=http://localhost:11434`
 - `STATE_BACKEND=postgres`
 - `CONVERSATION_RETENTION_HOURS=24`: remove o histórico das conversas após 24 horas; aceita valores de 1 a 24
@@ -150,6 +153,18 @@ make dev-observed
 
 Esse modo usa o alias configurado em `DEFAULT_MODEL_ALIAS` e requer o Ollama e o Langfuse locais ativos. Para executar sem dependências de inferência, use `make dev-stub`.
 
+### Descoberta e registro de modelos
+
+Abra **Modelos** no console administrativo, escolha OpenRouter ou Hugging Face, pesquise no catálogo e selecione **Adicionar**. O alias passa a aparecer imediatamente no inventário e no Playground. Modelos adicionados são gravados em `data/models.json`; a stack Docker monta `data/` na API para preservar o registro entre recriações do container.
+
+A busca no catálogo do Hugging Face é pública e funciona sem autenticação. Para executar um modelo Hugging Face adicionado, configure `HF_TOKEN` no `.env` e recrie a API. Modelos OpenRouter usam `OPENROUTER_API_KEY`.
+
+Endpoints equivalentes:
+
+- `GET /api/v1/platform/models/discover?provider=openrouter&query=qwen&limit=20`
+- `GET /api/v1/platform/models/discover?provider=huggingface&query=qwen&limit=20`
+- `POST /api/v1/platform/models`
+
 ### Observabilidade com Langfuse
 
 A stack completa já habilita o Langfuse na API containerizada:
@@ -182,6 +197,8 @@ make lint
 - `GET /ready`
 - `POST /api/v1/chat`
 - `GET /api/v1/platform/overview`
+- `GET /api/v1/platform/models/discover`
+- `POST /api/v1/platform/models`
 
 Exemplo:
 
@@ -200,6 +217,9 @@ Para consultas de notícias, envie mensagens como "quais são as notícias de te
 - **Nenhuma observation no Langfuse v4**: execute uma chamada em `POST /api/v1/chat`, abra **Observations** e remova filtros salvos antes de buscar por `supervisor-chat`.
 - **Banco indisponível**: valide `DATABASE_URL` e execute `make up` para subir PostgreSQL.
 - **Modelo não encontrado**: rode `ollama list` e ajuste `OLLAMA_MODEL`.
+- **Modelo Hugging Face retorna 503**: configure `HF_TOKEN` no `.env` e recrie a API; buscar e adicionar modelos não exige o token.
+- **Modelo remoto não executa**: confirme que a credencial do provedor está configurada e que o modelo oferece inferência hospedada compatível com chat/text generation.
+- **OpenRouter retorna 429**: o provedor selecionado está temporariamente limitado; tente novamente ou escolha outro modelo/provedor no catálogo.
 
 ## Decisões arquiteturais
 

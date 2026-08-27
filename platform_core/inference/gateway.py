@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 from litellm import acompletion
+from litellm.exceptions import APIError, AuthenticationError, BadRequestError, RateLimitError
 
 from platform_core.config.model_registry import ModelRegistry
 from platform_core.config.settings import Settings
@@ -52,7 +53,16 @@ class LiteLLMInferenceGateway:
             if not self._settings.huggingface_api_key:
                 raise AppError("HF_TOKEN is required for Hugging Face models", status_code=503)
             kwargs["api_key"] = self._settings.huggingface_api_key
-        response = await acompletion(**kwargs)
+        try:
+            response = await acompletion(**kwargs)
+        except RateLimitError as exc:
+            raise AppError("Model provider is temporarily rate-limited; try again shortly", status_code=429) from exc
+        except AuthenticationError as exc:
+            raise AppError("Model provider credentials were rejected", status_code=503) from exc
+        except BadRequestError as exc:
+            raise AppError("Model provider rejected the request", status_code=422) from exc
+        except APIError as exc:
+            raise AppError("Model provider is currently unavailable", status_code=502) from exc
         answer = str(response.choices[0].message.content or "").strip()
         return InferenceResult(
             answer=answer,
