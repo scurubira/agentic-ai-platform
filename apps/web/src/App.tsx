@@ -7,8 +7,10 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-type Section = 'overview' | 'playground' | 'models' | 'integrations' | 'governance'
+type Section = 'overview' | 'playground' | 'agents' | 'models' | 'integrations' | 'governance'
 type Model = { alias: string; name: string; provider: string; default: boolean }
+type Agent = { id: string; name: string; description: string; model_alias: string; capabilities: string[]; protected: boolean }
+type CatalogAgent = Agent & { installed: boolean }
 type CatalogProvider = 'openrouter' | 'huggingface'
 type CatalogModel = { provider: CatalogProvider; model_id: string; name: string; description: string; context_length: number | null; input_price: string | null; output_price: string | null; downloads: number | null; likes: number | null }
 type Overview = {
@@ -31,7 +33,7 @@ type Readiness = {
   }
 }
 type Message = { role: 'user' | 'assistant'; content: string; meta?: string }
-type QuestionHistoryItem = { id: string; content: string; askedAt: string }
+type PlaygroundSession = { id: string; model: string; updatedAt: string; messages: Message[] }
 type EvalDefinition = { id: string; name: string; description: string; expected_keywords: string[]; min_score: number }
 type Guardrail = { id: string; name: string; rule_type: 'blocked_terms' | 'required_terms' | 'max_length'; stage: 'input' | 'output' | 'both'; action: 'block' | 'warn'; terms: string[]; max_length: number | null; enabled: boolean }
 type GovernanceSnapshot = { evals: EvalDefinition[]; guardrails: Guardrail[] }
@@ -42,7 +44,7 @@ const emptyOverview: Overview = {
 }
 const nav: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Visão geral', icon: Gauge }, { id: 'playground', label: 'Playground', icon: MessageSquareText },
-  { id: 'models', label: 'Modelos', icon: BrainCircuit }, { id: 'integrations', label: 'Integrações', icon: Network },
+  { id: 'agents', label: 'Agentes', icon: Bot }, { id: 'models', label: 'Modelos', icon: BrainCircuit }, { id: 'integrations', label: 'Integrações', icon: Network },
   { id: 'governance', label: 'Governança', icon: ShieldCheck },
 ]
 const tools = [
@@ -98,6 +100,7 @@ export default function App() {
         {error && <div className="alert"><CircleAlert /><span><b>API fora de alcance.</b> Inicie o backend em localhost:8000.</span><button onClick={() => void load()}>Tentar novamente</button></div>}
         {section === 'overview' && <OverviewPage data={overview} ready={ready} loading={loading} go={go} />}
         {section === 'playground' && <Playground models={overview.models} available={!error} />}
+        {section === 'agents' && <Agents models={overview.models} available={!error} />}
         {section === 'models' && <Models models={overview.models} onChanged={load} />}
         {section === 'integrations' && <Integrations data={overview} ready={ready} />}
         {section === 'governance' && <Governance available={!error} />}
@@ -137,26 +140,78 @@ function PanelHead({ eyebrow, title, extra }: { eyebrow: string; title: string; 
 function Service({ icon: Icon, name, detail, ok, optional }: { icon: LucideIcon; name: string; detail: string; ok: boolean; optional?: boolean }) { return <div className="service"><span className="serviceIcon"><Icon /></span><div><b>{name}</b><small>{detail}</small></div><em className={ok ? 'online' : ''}>{ok ? <><Check /> Online</> : optional ? 'Não configurado' : 'Indisponível'}</em></div> }
 function ToolSection() { return <section className="tools"><div><span className="eyebrow">ACESSO RÁPIDO</span><h2>Ferramentas da plataforma</h2></div><div className="toolGrid">{tools.map(({ icon: Icon, ...tool }) => <a className="tool" href={tool.href} target="_blank" key={tool.name}><span><Icon /></span><div><b>{tool.name}</b><small>{tool.detail}</small></div><ArrowUpRight /></a>)}</div></section> }
 
+function Agents({ models, available }: { models: Model[]; available: boolean }) {
+  const [installed, setInstalled] = useState<Agent[]>([])
+  const [catalog, setCatalog] = useState<CatalogAgent[]>([])
+  const [modelAlias, setModelAlias] = useState('fast')
+  const [busy, setBusy] = useState<string>()
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string }>()
+
+  async function request(path: string, options?: RequestInit) {
+    const response = await fetch(path, options); const body = response.status === 204 ? undefined : await response.json()
+    if (!response.ok) throw new Error(body?.detail || `Falha HTTP ${response.status}`)
+    return body
+  }
+  async function loadAgents() {
+    try { const data = await request('/api/v1/platform/agents'); setInstalled(data.installed); setCatalog(data.catalog) }
+    catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível carregar os agentes.' }) }
+  }
+  useEffect(() => {
+    if (!available) return
+    let active = true
+    fetch('/api/v1/platform/agents').then(async response => {
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`)
+      if (active) { setInstalled(body.installed); setCatalog(body.catalog) }
+    }).catch(reason => { if (active) setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível carregar os agentes.' }) })
+    return () => { active = false }
+  }, [available])
+  const selectedModel = models.some(item => item.alias === modelAlias) ? modelAlias : models.find(item => item.default)?.alias || models[0]?.alias || ''
+  async function install(agentId: string) {
+    setBusy(agentId); setNotice(undefined)
+    try {
+      await request(`/api/v1/platform/agents/${agentId}/install`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_alias: selectedModel }) })
+      await loadAgents(); setNotice({ kind: 'ok', text: 'Agente instalado e pronto para configuração.' })
+    } catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível instalar o agente.' }) }
+    finally { setBusy(undefined) }
+  }
+  async function remove(agentId: string) {
+    setBusy(agentId); setNotice(undefined)
+    try { await request(`/api/v1/platform/agents/${agentId}`, { method: 'DELETE' }); await loadAgents(); setNotice({ kind: 'ok', text: 'Agente removido do registro.' }) }
+    catch (reason) { setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível remover o agente.' }) }
+    finally { setBusy(undefined) }
+  }
+  return <div className="page agentPage">
+    <Heading eyebrow="AGENT REGISTRY" title="Agentes" text="Instale especialistas suportados pela plataforma, associe modelos e controle o inventário ativo." />
+    {notice && <div className={`governanceNotice ${notice.kind}`}><span>{notice.kind === 'ok' ? <Check /> : <CircleAlert />}</span>{notice.text}</div>}
+    <div className="agentWorkbench">
+      <section className="agentCatalog panel"><PanelHead eyebrow="CATÁLOGO INTERNO" title="Especialistas disponíveis" extra={<Boxes />} /><div className="agentModel"><label>Modelo para instalação<select value={selectedModel} onChange={event => setModelAlias(event.target.value)}>{models.map(model => <option value={model.alias} key={model.alias}>{model.alias} · {model.name}</option>)}</select></label></div><div className="agentCards">{catalog.map(agent => <article key={agent.id}><span><Bot /></span><div><h3>{agent.name}</h3><p>{agent.description}</p><small>{agent.capabilities.join(' · ')}</small></div><button className="primary" disabled={agent.installed || busy === agent.id || models.length === 0} onClick={() => void install(agent.id)}>{agent.installed ? <Check /> : <Plus />}{agent.installed ? 'Instalado' : 'Instalar'}</button></article>)}</div></section>
+      <section className="installedAgents panel"><PanelHead eyebrow="INVENTÁRIO" title="Agentes instalados" extra={<span className="agentCount">{installed.length}</span>} /><div>{installed.map(agent => <article key={agent.id}><span className="agentAvatar"><Bot /></span><div><h3>{agent.name}</h3><p>{agent.description}</p><small><code>{agent.model_alias}</code>{agent.capabilities.join(' · ')}</small></div>{agent.protected ? <em><ShieldCheck /> Protegido</em> : <button className="icon danger" disabled={busy === agent.id} onClick={() => void remove(agent.id)} title={`Remover ${agent.name}`} aria-label={`Remover ${agent.name}`}><Trash2 /></button>}</article>)}</div></section>
+    </div>
+  </div>
+}
+
 function Playground({ models, available }: { models: Model[]; available: boolean }) {
   const [model, setModel] = useState('fast'); const [session, setSession] = useState<string>(); const [input, setInput] = useState(''); const [sending, setSending] = useState(false); const [runError, setRunError] = useState<string>()
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: 'Olá. Sou o agente supervisor. Envie uma tarefa para testar o fluxo completo da plataforma.', meta: 'pronto para executar' }])
-  const [questionHistory, setQuestionHistory] = useState<QuestionHistoryItem[]>(() => {
-    try { return JSON.parse(localStorage.getItem('playground-question-history') || '[]') }
+  const [sessionHistory, setSessionHistory] = useState<PlaygroundSession[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem('playground-session-history') || '[]'); return Array.isArray(saved) ? saved : [] }
     catch { return [] }
   })
   useEffect(() => { const selected = models.find(item => item.default); if (selected) setModel(selected.alias) }, [models])
-  useEffect(() => { localStorage.setItem('playground-question-history', JSON.stringify(questionHistory)) }, [questionHistory])
+  useEffect(() => { localStorage.setItem('playground-session-history', JSON.stringify(sessionHistory)) }, [sessionHistory])
+  function newSession() { setMessages([{ role: 'assistant', content: 'Olá. Sou o agente supervisor. Envie uma tarefa para testar o fluxo completo da plataforma.', meta: 'pronto para executar' }]); setSession(undefined); setInput(''); setRunError(undefined) }
+  function openSession(item: PlaygroundSession) { if (sending) return; setSession(item.id); setModel(item.model); setMessages(item.messages); setInput(''); setRunError(undefined) }
   async function send(event: FormEvent) {
     event.preventDefault(); const text = input.trim(); if (!text || sending) return
-    setQuestionHistory(old => [{ id: crypto.randomUUID(), content: text, askedAt: new Date().toISOString() }, ...old].slice(0, 20))
-    setMessages(old => [...old, { role: 'user', content: text }]); setInput(''); setSending(true); setRunError(undefined)
-    try { const response = await fetch('/api/v1/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, model, session_id: session }) }); const body = await response.json(); if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`); setSession(body.session_id); setMessages(old => [...old, { role: 'assistant', content: body.answer, meta: `${body.model} · ${body.latency_ms} ms` }]) }
+    const pendingMessages = [...messages, { role: 'user' as const, content: text }]
+    setMessages(pendingMessages); setInput(''); setSending(true); setRunError(undefined)
+    try { const response = await fetch('/api/v1/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, model, session_id: session }) }); const body = await response.json(); if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`); const completedMessages = [...pendingMessages, { role: 'assistant' as const, content: body.answer, meta: `${body.model} · ${body.latency_ms} ms` }]; setSession(body.session_id); setMessages(completedMessages); setSessionHistory(old => [{ id: body.session_id, model, updatedAt: new Date().toISOString(), messages: completedMessages }, ...old.filter(item => item.id !== body.session_id)].slice(0, 20)) }
     catch (reason) { const detail = reason instanceof Error ? reason.message : 'Falha ao acessar a API.'; setRunError(detail); setMessages(old => [...old, { role: 'assistant', content: detail, meta: 'erro de execução' }]) } finally { setSending(false) }
   }
   return <div className="page"><Heading eyebrow="AGENT LAB" title="Playground" text="Execute o supervisor e acompanhe modelo, sessão e latência em tempo real." /><div className="playGrid">
-    <section className="chat"><div className="chatTop"><div><i className={available ? '' : 'bad'} /><b>Supervisor</b><small>{available ? 'node online' : 'node offline'}</small></div><button className="icon" onClick={() => { setMessages([]); setSession(undefined); setRunError(undefined) }} title="Limpar conversa" aria-label="Limpar conversa"><X /></button></div>{runError && <div className="runError"><CircleAlert />{runError}</div>}<div className="messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={index}><span>{message.role === 'assistant' ? <Bot /> : 'BT'}</span><div><p>{message.content}</p>{message.meta && <small>{message.meta}</small>}</div></div>)}{sending && <div className="message"><span><Bot /></span><div className="typing">PROCESSANDO</div></div>}</div><form className="composer" onSubmit={send}><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }} maxLength={4000} placeholder="Digite uma instrução para o supervisor..." /><div><small>{input.length}/4000 · ENTER PARA EXECUTAR</small><button disabled={!input.trim() || sending || !available} title="Enviar mensagem" aria-label="Enviar mensagem"><Send /></button></div></form></section>
+    <section className="chat"><div className="chatTop"><div><i className={available ? '' : 'bad'} /><b>Supervisor</b><small>{available ? 'node online' : 'node offline'}</small></div><button className="icon" onClick={newSession} disabled={sending} title="Nova sessão" aria-label="Nova sessão"><X /></button></div>{runError && <div className="runError"><CircleAlert />{runError}</div>}<div className="messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={index}><span>{message.role === 'assistant' ? <Bot /> : 'BT'}</span><div><p>{message.content}</p>{message.meta && <small>{message.meta}</small>}</div></div>)}{sending && <div className="message"><span><Bot /></span><div className="typing">PROCESSANDO</div></div>}</div><form className="composer" onSubmit={send}><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }} maxLength={4000} placeholder="Digite uma instrução para o supervisor..." /><div><small>{input.length}/4000 · ENTER PARA EXECUTAR</small><button disabled={!input.trim() || sending || !available} title="Enviar mensagem" aria-label="Enviar mensagem"><Send /></button></div></form></section>
     <aside className="runConfig"><PanelHead eyebrow="EXECUÇÃO" title="Configuração" extra={<Settings2 />} /><label>Modelo<select value={model} onChange={e => setModel(e.target.value)}>{models.length ? models.map(item => <option value={item.alias} key={item.alias}>{item.alias} · {item.name}</option>) : <option>fast</option>}</select></label><div className="readout"><span>Agente</span><b>supervisor</b></div><div className="readout"><span>Sessão</span><b>{session ? `${session.slice(0, 10)}…` : 'nova sessão'}</b></div><div className="flow"><span>Fluxo atual</span><div><b>START</b><i /><b>SUPERVISOR</b><i /><b>LLM</b><i /><b>END</b></div></div></aside>
-  </div><section className="questionHistory panel"><div className="historyHead"><div><span className="eyebrow">MEMÓRIA LOCAL</span><h2><Clock3 /> Histórico de perguntas</h2></div>{questionHistory.length > 0 && <button type="button" onClick={() => setQuestionHistory([])}>Limpar histórico</button>}</div><div className="historyList">{questionHistory.map(item => <button type="button" key={item.id} onClick={() => setInput(item.content)} title="Usar esta pergunta novamente"><span>{item.content}</span><time>{new Date(item.askedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></button>)}{questionHistory.length === 0 && <p>As perguntas enviadas aparecerão aqui e poderão ser reutilizadas.</p>}</div></section></div>
+  </div><section className="questionHistory panel"><div className="historyHead"><div><span className="eyebrow">CONVERSAS RECENTES</span><h2><Clock3 /> Histórico de sessões</h2></div>{sessionHistory.length > 0 && <button type="button" onClick={() => setSessionHistory([])}>Limpar histórico</button>}</div><div className="historyList">{sessionHistory.map(item => { const firstQuestion = item.messages.find(message => message.role === 'user')?.content || 'Sessão sem título'; const turns = item.messages.filter(message => message.role === 'user').length; return <button className={session === item.id ? 'active' : ''} type="button" key={item.id} onClick={() => openSession(item)} title="Reabrir esta sessão"><span>{firstQuestion}</span><small>{turns} {turns === 1 ? 'pergunta' : 'perguntas'} · {item.model}</small><time>{new Date(item.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></button> })}{sessionHistory.length === 0 && <p>As sessões concluídas aparecerão aqui e poderão ser reabertas.</p>}</div></section></div>
 }
 function Models({ models, onChanged }: { models: Model[]; onChanged: () => Promise<void> }) {
   const [provider, setProvider] = useState<CatalogProvider>('openrouter')

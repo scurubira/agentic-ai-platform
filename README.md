@@ -165,6 +165,18 @@ Endpoints equivalentes:
 - `GET /api/v1/platform/models/discover?provider=huggingface&query=qwen&limit=20`
 - `POST /api/v1/platform/models`
 
+### Instalação e remoção de agentes
+
+Abra **Agentes** no console administrativo para instalar especialistas do catálogo interno, escolher o alias de modelo usado por cada um e remover agentes instalados. O supervisor é parte central da plataforma e não pode ser removido.
+
+Neste MVP, instalar significa registrar e habilitar uma definição suportada pela plataforma; nenhum código remoto é baixado ou executado. O inventário é persistido em `data/agents.json` e preservado pela montagem `data/` da stack Docker.
+
+Endpoints equivalentes:
+
+- `GET /api/v1/platform/agents`
+- `POST /api/v1/platform/agents/{agent_id}/install`
+- `DELETE /api/v1/platform/agents/{agent_id}`
+
 ### Observabilidade com Langfuse
 
 A stack completa já habilita o Langfuse na API containerizada:

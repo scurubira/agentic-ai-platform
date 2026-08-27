@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from agents.supervisor.service import ChatService
 from mcp_servers.news.server import NewsMCPServer
+from platform_core.config.agent_registry import AgentRegistry
 from platform_core.config.model_catalog import ModelCatalogService
 from platform_core.config.model_registry import ModelRegistry
 from platform_core.config.settings import Settings
@@ -51,6 +52,7 @@ class ReadinessService:
 @dataclass
 class AppContainer:
     settings: Settings
+    agent_registry: AgentRegistry
     model_registry: ModelRegistry
     model_catalog_service: ModelCatalogService
     inference_gateway: InferenceGateway
@@ -79,6 +81,7 @@ class AppContainer:
 
 def build_container() -> AppContainer:
     settings = Settings()
+    agent_registry = AgentRegistry(settings.agent_config_path)
     model_registry = ModelRegistry(settings.model_config_path, settings.dynamic_model_config_path)
     model_catalog_service = ModelCatalogService(settings)
     inference_gateway: InferenceGateway = (
@@ -118,6 +121,7 @@ def build_container() -> AppContainer:
     )
     return AppContainer(
         settings=settings,
+        agent_registry=agent_registry,
         model_registry=model_registry,
         model_catalog_service=model_catalog_service,
         inference_gateway=inference_gateway,

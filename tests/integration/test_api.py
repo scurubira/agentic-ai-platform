@@ -98,6 +98,37 @@ def test_added_model_appears_in_platform_inventory(monkeypatch: MonkeyPatch, tmp
     assert any(model["alias"] == "qwen-hf" for model in overview_response.json()["models"])
 
 
+def test_agent_api_installs_and_removes_catalog_agent(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+    monkeypatch.setenv("AGENT_CONFIG_PATH", str(tmp_path / "agents.json"))
+
+    with TestClient(create_app()) as client:
+        catalog = client.get("/api/v1/platform/agents")
+        installed = client.post("/api/v1/platform/agents/rag/install", json={"model_alias": "reasoning"})
+        inventory = client.get("/api/v1/platform/agents")
+        removed = client.delete("/api/v1/platform/agents/rag")
+        protected = client.delete("/api/v1/platform/agents/supervisor")
+
+    assert catalog.status_code == 200
+    assert {agent["id"] for agent in catalog.json()["catalog"]} == {"news", "rag", "sql"}
+    assert installed.status_code == 201
+    assert installed.json()["model_alias"] == "reasoning"
+    assert {agent["id"] for agent in inventory.json()["installed"]} == {"rag", "supervisor"}
+    assert removed.status_code == 204
+    assert protected.status_code == 409
+
+
+def test_agent_api_rejects_unknown_model(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+
+    with TestClient(create_app()) as client:
+        response = client.post("/api/v1/platform/agents/sql/install", json={"model_alias": "missing"})
+
+    assert response.status_code == 400
+
+
 def test_chat_endpoint_returns_structured_response(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("MODEL_BACKEND", "stub")
     monkeypatch.setenv("STATE_BACKEND", "memory")

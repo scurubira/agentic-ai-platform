@@ -1,12 +1,40 @@
+from dataclasses import asdict
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 
 from apps.api.dependencies.services import get_container
+from apps.api.schemas.agents import AgentInstall
 from apps.api.schemas.models import ModelCreate
 from platform_core.container import AppContainer
 
 router = APIRouter(prefix="/api/v1/platform", tags=["platform"])
+
+
+@router.get("/agents")
+async def list_agents(container: AppContainer = Depends(get_container)) -> dict[str, object]:
+    return {
+        "installed": [asdict(agent) for agent in container.agent_registry.list_installed()],
+        "catalog": container.agent_registry.list_catalog(),
+    }
+
+
+@router.post("/agents/{agent_id}/install", status_code=201)
+async def install_agent(
+    agent_id: str,
+    payload: AgentInstall,
+    container: AppContainer = Depends(get_container),
+) -> dict[str, object]:
+    container.model_registry.get(payload.model_alias)
+    return asdict(container.agent_registry.install(agent_id=agent_id, model_alias=payload.model_alias))
+
+
+@router.delete("/agents/{agent_id}", status_code=204)
+async def remove_agent(
+    agent_id: str,
+    container: AppContainer = Depends(get_container),
+) -> None:
+    container.agent_registry.remove(agent_id)
 
 
 @router.get("/models/discover")
