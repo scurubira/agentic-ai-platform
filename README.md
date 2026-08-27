@@ -4,11 +4,11 @@ MVP open source de uma plataforma agêntica **local first, cloud ready** usando 
 
 ## Objetivo
 
-Entregar um vertical slice funcional para o fluxo:
+Entregar uma plataforma administrativa funcional para o fluxo:
 
 `FastAPI -> LangGraph -> Inference Service -> LiteLLM -> Ollama -> Qwen`
 
-com a arquitetura preparada para evoluir para RAG, MCP, observabilidade com Langfuse e backends cloud/vLLM sem reescrever os agentes.
+com Wiki/RAG, catálogo de modelos cloud, inventários persistentes de agentes e MCPs, governança e observabilidade com Langfuse.
 
 ## Arquitetura
 
@@ -19,10 +19,13 @@ flowchart TD
     G --> INF[Inference Gateway]
     INF --> LITELLM[LiteLLM]
     LITELLM --> OLLAMA[Ollama Local]
+    LITELLM --> CLOUD[OpenRouter / Hugging Face]
     OLLAMA --> QWEN[Qwen Local]
-    G -. future .-> RAG[Retrieval Service -> Qdrant]
-    G -. future .-> MCP[MCP Gateway -> MCP Servers]
+    API --> WIKI[LLM Wiki / RAG lexical]
+    API --> REG[Model, Agent and MCP Registries]
+    G --> MCP[MCP Gateway -> News Server]
     G -. state .-> STATE[State Service -> PostgreSQL]
+    G -. traces .-> LF[Langfuse]
 ```
 
 ## Estrutura do projeto
@@ -73,6 +76,10 @@ Principais variáveis:
 - `MODEL_MAX_TOKENS=4096`: limita a saída enviada aos provedores e controla custo
 - `MODEL_CATALOG_TIMEOUT_SECONDS=10`: timeout das buscas nos catálogos externos
 - `DYNAMIC_MODEL_CONFIG_PATH=data/models.json`: registro persistente dos modelos adicionados
+- `AGENT_CONFIG_PATH=data/agents.json`: inventário persistente dos agentes instalados
+- `MCP_CONFIG_PATH=data/mcp_servers.json`: inventário persistente dos servidores MCP registrados
+- `WIKI_CONFIG_PATH=data/wiki.json`: conteúdo persistente da LLM Wiki
+- `WIKI_REPOSITORY_ROOT=.`: raiz permitida para importação de arquivos locais pela Wiki
 - `REASONING_MODEL_ID=qwen/qwen3-next-80b-a3b-thinking`: modelo usado pelo alias `reasoning` via OpenRouter
 - `OPENROUTER_API_KEY`: chave criada em https://openrouter.ai/settings/keys
 - `OPENROUTER_FREE_MODEL_ID=openrouter/free`: roteia automaticamente entre modelos gratuitos; também aceita um ID `:free`
@@ -177,6 +184,19 @@ Endpoints equivalentes:
 - `POST /api/v1/platform/agents/{agent_id}/install`
 - `DELETE /api/v1/platform/agents/{agent_id}`
 
+### Descoberta, instalação e remoção de MCPs
+
+Abra **MCPs** no console administrativo para pesquisar servidores no [MCP Registry oficial](https://registry.modelcontextprotocol.io/), adicioná-los ao inventário local e remover registros instalados. O inventário é persistido em `data/mcp_servers.json` e preservado pela montagem `data/` da stack Docker.
+
+Nesta versão, a instalação registra metadados como nome, versão, origem e transporte. Ela não baixa pacotes, inicia processos nem conecta automaticamente o servidor descoberto ao gateway de ferramentas. O servidor de notícias integrado continua sendo registrado no gateway durante a inicialização da API.
+
+Endpoints equivalentes:
+
+- `GET /api/v1/platform/mcps`
+- `GET /api/v1/platform/mcps/discover?query=filesystem&limit=20`
+- `POST /api/v1/platform/mcps`
+- `DELETE /api/v1/platform/mcps/{name}`
+
 ### LLM Wiki e RAG
 
 Abra **LLM Wiki** para criar páginas Markdown, pesquisar páginas na internet, importar arquivos `.md`/`.txt`, capturar conteúdo de URLs públicas ou indexar a documentação do repositório local. Resultados da busca podem ser inspecionados e importados com um clique. A biblioteca permite busca textual, edição, prévia e perguntas respondidas pelo Inference Gateway com os trechos de origem.
@@ -235,7 +255,19 @@ make lint
 - `GET /api/v1/platform/overview`
 - `GET /api/v1/platform/models/discover`
 - `POST /api/v1/platform/models`
+- `GET /api/v1/platform/agents`
+- `POST /api/v1/platform/agents/{agent_id}/install`
+- `DELETE /api/v1/platform/agents/{agent_id}`
+- `GET /api/v1/platform/mcps`
+- `GET /api/v1/platform/mcps/discover`
+- `POST /api/v1/platform/mcps`
+- `DELETE /api/v1/platform/mcps/{name}`
 - `GET /api/v1/wiki`
+- `GET /api/v1/wiki/search`
+- `POST /api/v1/wiki/pages`
+- `POST /api/v1/wiki/import/file`
+- `POST /api/v1/wiki/import/url`
+- `POST /api/v1/wiki/import/repository`
 - `POST /api/v1/wiki/ask`
 
 Exemplo:
@@ -258,19 +290,21 @@ Para consultas de notícias, envie mensagens como "quais são as notícias de te
 - **Modelo Hugging Face retorna 503**: configure `HF_TOKEN` no `.env` e recrie a API; buscar e adicionar modelos não exige o token.
 - **Modelo remoto não executa**: confirme que a credencial do provedor está configurada e que o modelo oferece inferência hospedada compatível com chat/text generation.
 - **OpenRouter retorna 429**: o provedor selecionado está temporariamente limitado; tente novamente ou escolha outro modelo/provedor no catálogo.
+- **MCP Registry retorna 502**: confirme o acesso da API à internet; a descoberta depende de `registry.modelcontextprotocol.io`, mas o inventário local continua disponível.
+- **LLM Wiki abre vazia após recriar a API**: confirme que a stack monta `./data:/app/data` e que `WIKI_CONFIG_PATH=data/wiki.json` não foi alterado para um caminho fora desse volume.
 
 ## Decisões arquiteturais
 
 1. **Model alias first**: agentes pedem `fast` ou `reasoning`; nomes físicos ficam no `litellm.yaml`.
-2. **LangGraph simples no MVP**: `START -> Supervisor -> LLM -> END`, com pontos claros para RAG/SQL/Tools.
+2. **LangGraph simples no MVP**: `START -> Supervisor -> LLM -> END`; Wiki/RAG e registros administrativos permanecem serviços explícitos da API.
 3. **PostgreSQL e Qdrant já containerizados**: disponíveis desde o início sem forçar uso prematuro do Qdrant.
-4. **MCP desacoplado**: filesystem/database expostos como servidores separados, não embutidos na lógica do agente.
+4. **MCP desacoplado**: o gateway de execução e o inventário do catálogo oficial têm responsabilidades separadas.
 5. **Observabilidade local**: logs estruturados e traces do LangGraph enviados ao Langfuse self-hosted.
 
 ## Roadmap
 
 1. Persistência de memória mais rica no PostgreSQL
-2. Ingestão TXT/Markdown + Retrieval Service em Qdrant
-3. MCP filesystem/database conectado ao supervisor
+2. Evolução da recuperação lexical da Wiki para embeddings no Qdrant
+3. Provisionamento e conexão dos MCPs instalados ao gateway de execução
 4. Dashboards, avaliações e alertas no Langfuse
 5. Comparação de modelos local vs cloud em `evals/`
