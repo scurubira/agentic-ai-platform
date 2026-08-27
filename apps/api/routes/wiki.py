@@ -95,7 +95,9 @@ async def search_web(
     container: AppContainer = Depends(get_container),
 ) -> dict[str, object]:
     try:
-        async with httpx.AsyncClient(timeout=container.settings.request_timeout_seconds, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=container.settings.request_timeout_seconds, follow_redirects=True
+        ) as client:
             response = await client.get(
                 "https://html.duckduckgo.com/html/",
                 params={"q": query},

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -174,6 +175,29 @@ def test_wiki_file_import_accepts_text_and_rejects_binary_extension(monkeypatch:
     assert imported.status_code == 201
     assert imported.json()["source"] == "file:architecture.md"
     assert rejected.status_code == 422
+
+
+def test_wiki_search_returns_normalized_internet_pages(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_BACKEND", "stub")
+    monkeypatch.setenv("STATE_BACKEND", "memory")
+
+    async def fake_get(self: httpx.AsyncClient, url: str, **kwargs: object) -> httpx.Response:
+        del self, kwargs
+        html = """
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs">Docs</a>
+        <a class="result__snippet">Documentation result.</a>
+        """
+        return httpx.Response(200, text=html, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/wiki/search?query=agentic+platform&limit=5")
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [
+        {"title": "Docs", "url": "https://example.com/docs", "snippet": "Documentation result."}
+    ]
 
 
 def test_wiki_repository_import_is_safe_and_idempotent(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:

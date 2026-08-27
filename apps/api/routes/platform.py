@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, Query
 
 from apps.api.dependencies.services import get_container
 from apps.api.schemas.agents import AgentInstall
+from apps.api.schemas.mcps import MCPServerInstall
 from apps.api.schemas.models import ModelCreate
 from platform_core.container import AppContainer
+from platform_core.mcp.registry import MCPServerDefinition
 
 router = APIRouter(prefix="/api/v1/platform", tags=["platform"])
 
@@ -35,6 +37,41 @@ async def remove_agent(
     container: AppContainer = Depends(get_container),
 ) -> None:
     container.agent_registry.remove(agent_id)
+
+
+@router.get("/mcps")
+async def list_mcps(container: AppContainer = Depends(get_container)) -> dict[str, object]:
+    return {"installed": [asdict(item) for item in container.mcp_registry_service.list_installed()]}
+
+
+@router.get("/mcps/discover")
+async def discover_mcps(
+    query: str = Query(default="", max_length=120),
+    limit: int = Query(default=20, ge=1, le=50),
+    container: AppContainer = Depends(get_container),
+) -> dict[str, object]:
+    return {"servers": await container.mcp_registry_service.search(query.strip(), limit)}
+
+
+@router.post("/mcps", status_code=201)
+async def install_mcp(
+    payload: MCPServerInstall,
+    container: AppContainer = Depends(get_container),
+) -> dict[str, object]:
+    definition = MCPServerDefinition(
+        name=payload.name,
+        description=payload.description,
+        version=payload.version,
+        source=payload.source,
+        transport=payload.transport,
+        repository_url=str(payload.repository_url) if payload.repository_url else None,
+    )
+    return asdict(container.mcp_registry_service.install(definition))
+
+
+@router.delete("/mcps/{name:path}", status_code=204)
+async def remove_mcp(name: str, container: AppContainer = Depends(get_container)) -> None:
+    container.mcp_registry_service.remove(name)
 
 
 @router.get("/models/discover")

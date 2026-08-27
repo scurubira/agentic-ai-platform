@@ -12,6 +12,7 @@ from platform_core.governance.service import GovernanceService
 from platform_core.inference.gateway import LiteLLMInferenceGateway, StubInferenceGateway
 from platform_core.inference.types import InferenceGateway
 from platform_core.mcp.gateway import MCPGateway
+from platform_core.mcp.registry import MCPRegistryService
 from platform_core.memory.store import InMemoryConversationStore, PostgresConversationStore
 from platform_core.observability.logging import get_logger
 from platform_core.observability.tracing import TracingService, build_tracing_service
@@ -60,6 +61,7 @@ class AppContainer:
     inference_gateway: InferenceGateway
     conversation_store: ConversationStore
     mcp_gateway: MCPGateway
+    mcp_registry_service: MCPRegistryService
     chat_service: ChatService
     readiness_service: ReadinessService
     tracing_service: TracingService
@@ -98,6 +100,7 @@ def build_container() -> AppContainer:
         else InMemoryConversationStore()
     )
     mcp_gateway = MCPGateway()
+    mcp_registry_service = MCPRegistryService(settings.mcp_config_path, settings.model_catalog_timeout_seconds)
     mcp_gateway.register(
         "news",
         NewsMCPServer(
@@ -131,6 +134,7 @@ def build_container() -> AppContainer:
         inference_gateway=inference_gateway,
         conversation_store=conversation_store,
         mcp_gateway=mcp_gateway,
+        mcp_registry_service=mcp_registry_service,
         chat_service=chat_service,
         readiness_service=readiness_service,
         tracing_service=tracing_service,

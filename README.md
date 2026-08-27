@@ -179,7 +179,7 @@ Endpoints equivalentes:
 
 ### LLM Wiki e RAG
 
-Abra **LLM Wiki** para criar páginas Markdown, importar arquivos `.md`/`.txt`, capturar conteúdo de URLs públicas ou indexar a documentação do repositório local. A biblioteca permite busca textual, edição, prévia e perguntas respondidas pelo Inference Gateway com os trechos de origem.
+Abra **LLM Wiki** para criar páginas Markdown, pesquisar páginas na internet, importar arquivos `.md`/`.txt`, capturar conteúdo de URLs públicas ou indexar a documentação do repositório local. Resultados da busca podem ser inspecionados e importados com um clique. A biblioteca permite busca textual, edição, prévia e perguntas respondidas pelo Inference Gateway com os trechos de origem.
 
 O conteúdo e o índice lexical são persistidos em `data/wiki.json`. `WIKI_REPOSITORY_ROOT` limita a raiz disponível para indexação; somente arquivos `.md` e `.txt` são lidos, com limite de 100 arquivos por operação. Diretórios ocultos, dependências e `data/` são ignorados. Reindexar a mesma fonte atualiza a página existente.
 
@@ -192,6 +192,7 @@ Configuração:
 Endpoints:
 
 - `GET /api/v1/wiki`
+- `GET /api/v1/wiki/search?query=langgraph&limit=8`
 - `POST /api/v1/wiki/pages`
 - `PUT /api/v1/wiki/pages/{page_id}`
 - `DELETE /api/v1/wiki/pages/{page_id}`

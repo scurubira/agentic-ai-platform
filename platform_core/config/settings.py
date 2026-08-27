@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     dynamic_model_config_path: Path = Field(default=Path("data/models.json"), alias="DYNAMIC_MODEL_CONFIG_PATH")
     agent_config_path: Path = Field(default=Path("data/agents.json"), alias="AGENT_CONFIG_PATH")
     wiki_config_path: Path = Field(default=Path("data/wiki.json"), alias="WIKI_CONFIG_PATH")
+    mcp_config_path: Path = Field(default=Path("data/mcp_servers.json"), alias="MCP_CONFIG_PATH")
     wiki_repository_root: Path = Field(default=Path("."), alias="WIKI_REPOSITORY_ROOT")
     healthcheck_timeout_seconds: int = Field(default=3, alias="HEALTHCHECK_TIMEOUT_SECONDS")
 
