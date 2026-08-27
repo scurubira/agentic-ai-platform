@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Query
@@ -46,6 +46,37 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data.strip())
 
 
+class _SearchResultParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[dict[str, str]] = []
+        self._current: dict[str, str] | None = None
+        self._capture: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = (attributes.get("class") or "").split()
+        if tag == "a" and "result__a" in classes:
+            self._current = {"title": "", "url": _normalize_search_url(attributes.get("href") or ""), "snippet": ""}
+            self._capture = "title"
+        elif self._current is not None and "result__snippet" in classes:
+            self._capture = "snippet"
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._capture == "title":
+            self._capture = None
+        elif tag in {"a", "div"} and self._capture == "snippet" and self._current is not None:
+            if self._current["title"] and self._current["url"]:
+                self.results.append(self._current)
+            self._current = None
+            self._capture = None
+
+    def handle_data(self, data: str) -> None:
+        if self._current is not None and self._capture and data.strip():
+            current = self._current[self._capture]
+            self._current[self._capture] = f"{current} {data.strip()}".strip()
+
+
 @router.get("")
 async def list_wiki(
     query: str = Query(default="", max_length=160),
@@ -55,6 +86,36 @@ async def list_wiki(
         "pages": [asdict(page) for page in container.wiki_service.list_pages(query)],
         "stats": container.wiki_service.stats(),
     }
+
+
+@router.get("/search")
+async def search_web(
+    query: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=8, ge=1, le=15),
+    container: AppContainer = Depends(get_container),
+) -> dict[str, object]:
+    try:
+        async with httpx.AsyncClient(timeout=container.settings.request_timeout_seconds, follow_redirects=True) as client:
+            response = await client.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query},
+                headers={"User-Agent": "Mozilla/5.0 BensTech-Wiki/1.0"},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise AppError("Internet search is temporarily unavailable", status_code=502) from exc
+    parser = _SearchResultParser()
+    parser.feed(response.text)
+    results = []
+    for result in parser.results:
+        try:
+            _validate_public_url(result["url"])
+        except AppError:
+            continue
+        results.append(result)
+        if len(results) == limit:
+            break
+    return {"query": query, "results": results}
 
 
 @router.post("/pages", status_code=201)
@@ -179,3 +240,9 @@ def _validate_public_url(url: str) -> None:
         return
     if not address.is_global:
         raise AppError("Private network URLs cannot be imported", status_code=422)
+
+
+def _normalize_search_url(url: str) -> str:
+    parsed = urlparse(url if not url.startswith("//") else f"https:{url}")
+    redirect_target = parse_qs(parsed.query).get("uddg")
+    return unquote(redirect_target[0]) if redirect_target else url
