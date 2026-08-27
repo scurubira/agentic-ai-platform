@@ -13,11 +13,15 @@ dev:
 	$(UV) run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-observed:
-	MODEL_BACKEND=stub STATE_BACKEND=memory \
+	MODEL_BACKEND=litellm STATE_BACKEND=memory \
 	LANGFUSE_ENABLED=true \
 	LANGFUSE_PUBLIC_KEY=pk-lf-local-development-project \
 	LANGFUSE_SECRET_KEY=sk-lf-local-development-project \
 	LANGFUSE_BASE_URL=http://127.0.0.1:3000 \
+	$(UV) run uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
+
+dev-stub:
+	MODEL_BACKEND=stub STATE_BACKEND=memory \
 	$(UV) run uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
 
 web:

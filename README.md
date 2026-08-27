@@ -134,11 +134,13 @@ Em outro terminal, inicie o console administrativo:
 make web
 ```
 
-Para desenvolvimento local com inferência stub e traces enviados diretamente ao Langfuse:
+Para desenvolvimento local com inferência via LiteLLM e traces enviados diretamente ao Langfuse:
 
 ```bash
 make dev-observed
 ```
+
+Esse modo usa o alias configurado em `DEFAULT_MODEL_ALIAS` e requer o Ollama e o Langfuse locais ativos. Para executar sem dependências de inferência, use `make dev-stub`.
 
 ## Testes e quality gates
 
