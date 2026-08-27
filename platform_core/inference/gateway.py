@@ -40,6 +40,7 @@ class LiteLLMInferenceGateway:
             "model": target.physical_model,
             "messages": conversation,
             "timeout": self._settings.model_timeout_seconds,
+            "max_tokens": self._settings.model_max_tokens,
         }
         if target.provider.startswith("ollama"):
             kwargs["api_base"] = self._settings.ollama_base_url
@@ -47,6 +48,10 @@ class LiteLLMInferenceGateway:
             if not self._settings.openrouter_api_key:
                 raise AppError("OPENROUTER_API_KEY is required for OpenRouter models", status_code=503)
             kwargs["api_key"] = self._settings.openrouter_api_key
+        if target.provider == "huggingface":
+            if not self._settings.huggingface_api_key:
+                raise AppError("HF_TOKEN is required for Hugging Face models", status_code=503)
+            kwargs["api_key"] = self._settings.huggingface_api_key
         response = await acompletion(**kwargs)
         answer = str(response.choices[0].message.content or "").strip()
         return InferenceResult(
@@ -63,6 +68,13 @@ class LiteLLMInferenceGateway:
                 "model_alias": model_alias,
                 "physical_model": target.physical_model,
                 "reason": "OPENROUTER_API_KEY is not configured",
+            }
+        if target.provider == "huggingface" and not self._settings.huggingface_api_key:
+            return {
+                "ok": False,
+                "model_alias": model_alias,
+                "physical_model": target.physical_model,
+                "reason": "HF_TOKEN is not configured",
             }
         if target.provider.startswith("ollama"):
             async with httpx.AsyncClient(timeout=self._settings.healthcheck_timeout_seconds) as client:

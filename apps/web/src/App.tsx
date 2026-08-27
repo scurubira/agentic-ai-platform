@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowUpRight, Bot, Boxes, BrainCircuit, Check, ChevronRight,
+  Activity, ArrowUpRight, Bot, Boxes, BrainCircuit, Check, ChevronRight, Clock3,
   CircleAlert, Cpu, Database, Gauge, Menu, MessageSquareText, Network,
   PanelLeftClose, Play, RefreshCw, Send, ServerCog, Settings2, ShieldCheck, Sparkles,
   TerminalSquare, TestTube2, Trash2, Workflow, X, type LucideIcon,
@@ -29,6 +29,7 @@ type Readiness = {
   }
 }
 type Message = { role: 'user' | 'assistant'; content: string; meta?: string }
+type QuestionHistoryItem = { id: string; content: string; askedAt: string }
 type EvalDefinition = { id: string; name: string; description: string; expected_keywords: string[]; min_score: number }
 type Guardrail = { id: string; name: string; rule_type: 'blocked_terms' | 'required_terms' | 'max_length'; stage: 'input' | 'output' | 'both'; action: 'block' | 'warn'; terms: string[]; max_length: number | null; enabled: boolean }
 type GovernanceSnapshot = { evals: EvalDefinition[]; guardrails: Guardrail[] }
@@ -46,7 +47,7 @@ const tools = [
   { name: 'API Docs', detail: 'FastAPI / Swagger', href: 'http://localhost:8000/docs', icon: TerminalSquare },
   { name: 'LangGraph Studio', detail: 'Inspeção de grafos', href: 'https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024', icon: Workflow },
   { name: 'LangGraph API', detail: 'Runtime local :2024', href: 'http://localhost:2024/docs', icon: Boxes },
-  { name: 'Langfuse', detail: 'Traces e avaliações', href: 'http://127.0.0.1:3000/project/agentic-ai-platform/traces', icon: Activity },
+  { name: 'Langfuse', detail: 'Observations e avaliações', href: 'http://localhost:3000/project/agentic-ai-platform/observations', icon: Activity },
 ]
 
 export default function App() {
@@ -137,16 +138,22 @@ function ToolSection() { return <section className="tools"><div><span className=
 function Playground({ models, available }: { models: Model[]; available: boolean }) {
   const [model, setModel] = useState('fast'); const [session, setSession] = useState<string>(); const [input, setInput] = useState(''); const [sending, setSending] = useState(false); const [runError, setRunError] = useState<string>()
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: 'Olá. Sou o agente supervisor. Envie uma tarefa para testar o fluxo completo da plataforma.', meta: 'pronto para executar' }])
+  const [questionHistory, setQuestionHistory] = useState<QuestionHistoryItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem('playground-question-history') || '[]') }
+    catch { return [] }
+  })
   useEffect(() => { const selected = models.find(item => item.default); if (selected) setModel(selected.alias) }, [models])
+  useEffect(() => { localStorage.setItem('playground-question-history', JSON.stringify(questionHistory)) }, [questionHistory])
   async function send(event: FormEvent) {
     event.preventDefault(); const text = input.trim(); if (!text || sending) return
+    setQuestionHistory(old => [{ id: crypto.randomUUID(), content: text, askedAt: new Date().toISOString() }, ...old].slice(0, 20))
     setMessages(old => [...old, { role: 'user', content: text }]); setInput(''); setSending(true); setRunError(undefined)
     try { const response = await fetch('/api/v1/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, model, session_id: session }) }); const body = await response.json(); if (!response.ok) throw new Error(body.detail || `Falha HTTP ${response.status}`); setSession(body.session_id); setMessages(old => [...old, { role: 'assistant', content: body.answer, meta: `${body.model} · ${body.latency_ms} ms` }]) }
     catch (reason) { const detail = reason instanceof Error ? reason.message : 'Falha ao acessar a API.'; setRunError(detail); setMessages(old => [...old, { role: 'assistant', content: detail, meta: 'erro de execução' }]) } finally { setSending(false) }
   }
   return <div className="page"><Heading eyebrow="AGENT LAB" title="Playground" text="Execute o supervisor e acompanhe modelo, sessão e latência em tempo real." /><div className="playGrid">
     <section className="chat"><div className="chatTop"><div><i className={available ? '' : 'bad'} /><b>Supervisor</b><small>{available ? 'node online' : 'node offline'}</small></div><button className="icon" onClick={() => { setMessages([]); setSession(undefined); setRunError(undefined) }} title="Limpar conversa" aria-label="Limpar conversa"><X /></button></div>{runError && <div className="runError"><CircleAlert />{runError}</div>}<div className="messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={index}><span>{message.role === 'assistant' ? <Bot /> : 'BT'}</span><div><p>{message.content}</p>{message.meta && <small>{message.meta}</small>}</div></div>)}{sending && <div className="message"><span><Bot /></span><div className="typing">PROCESSANDO</div></div>}</div><form className="composer" onSubmit={send}><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }} maxLength={4000} placeholder="Digite uma instrução para o supervisor..." /><div><small>{input.length}/4000 · ENTER PARA EXECUTAR</small><button disabled={!input.trim() || sending || !available} title="Enviar mensagem" aria-label="Enviar mensagem"><Send /></button></div></form></section>
-    <aside className="runConfig"><PanelHead eyebrow="EXECUÇÃO" title="Configuração" extra={<Settings2 />} /><label>Modelo<select value={model} onChange={e => setModel(e.target.value)}>{models.length ? models.map(item => <option value={item.alias} key={item.alias}>{item.alias} · {item.name}</option>) : <option>fast</option>}</select></label><div className="readout"><span>Agente</span><b>supervisor</b></div><div className="readout"><span>Sessão</span><b>{session ? `${session.slice(0, 10)}…` : 'nova sessão'}</b></div><div className="flow"><span>Fluxo atual</span><div><b>START</b><i /><b>SUPERVISOR</b><i /><b>LLM</b><i /><b>END</b></div></div></aside>
+    <aside className="runConfig"><PanelHead eyebrow="EXECUÇÃO" title="Configuração" extra={<Settings2 />} /><label>Modelo<select value={model} onChange={e => setModel(e.target.value)}>{models.length ? models.map(item => <option value={item.alias} key={item.alias}>{item.alias} · {item.name}</option>) : <option>fast</option>}</select></label><div className="readout"><span>Agente</span><b>supervisor</b></div><div className="readout"><span>Sessão</span><b>{session ? `${session.slice(0, 10)}…` : 'nova sessão'}</b></div><div className="flow"><span>Fluxo atual</span><div><b>START</b><i /><b>SUPERVISOR</b><i /><b>LLM</b><i /><b>END</b></div></div><div className="questionHistory"><div className="historyHead"><span><Clock3 /> Histórico de perguntas</span>{questionHistory.length > 0 && <button type="button" onClick={() => setQuestionHistory([])}>Limpar</button>}</div><div className="historyList">{questionHistory.map(item => <button type="button" key={item.id} onClick={() => setInput(item.content)} title="Usar esta pergunta novamente"><span>{item.content}</span><time>{new Date(item.askedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></button>)}{questionHistory.length === 0 && <p>As perguntas enviadas aparecerão aqui.</p>}</div></div></aside>
   </div></div>
 }
 function Models({ models }: { models: Model[] }) { return <div className="page"><Heading eyebrow="MODEL REGISTRY" title="Modelos" text="Inventário de aliases e provedores disponíveis para os agentes." action={<a className="secondary" href="http://localhost:8000/docs" target="_blank"><TerminalSquare /> Abrir API</a>} /><section className="panel table"><div className="tableRow tableHead"><span>Alias</span><span>Modelo físico</span><span>Provedor</span><span>Estado</span></div>{models.length ? models.map(item => <div className="tableRow" key={item.alias}><span><i><BrainCircuit /></i><b>{item.alias}</b></span><code>{item.name}</code><em>{item.provider}</em><strong className={item.default ? 'default' : ''}>{item.default ? 'Padrão' : 'Disponível'}</strong></div>) : <div className="empty"><CircleAlert /><b>Registro indisponível</b><small>Conecte a API para listar os modelos.</small></div>}</section><div className="note"><Sparkles /><div><b>Aliases desacoplam agentes dos modelos físicos.</b><p>Troque o backend no registro sem alterar a lógica do supervisor.</p></div></div></div> }

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from agents.supervisor.service import ChatService
 from mcp_servers.news.server import NewsMCPServer
+from platform_core.config.model_catalog import ModelCatalogService
 from platform_core.config.model_registry import ModelRegistry
 from platform_core.config.settings import Settings
 from platform_core.governance.service import GovernanceService
@@ -51,6 +52,7 @@ class ReadinessService:
 class AppContainer:
     settings: Settings
     model_registry: ModelRegistry
+    model_catalog_service: ModelCatalogService
     inference_gateway: InferenceGateway
     conversation_store: ConversationStore
     mcp_gateway: MCPGateway
@@ -77,7 +79,8 @@ class AppContainer:
 
 def build_container() -> AppContainer:
     settings = Settings()
-    model_registry = ModelRegistry(settings.model_config_path)
+    model_registry = ModelRegistry(settings.model_config_path, settings.dynamic_model_config_path)
+    model_catalog_service = ModelCatalogService(settings)
     inference_gateway: InferenceGateway = (
         StubInferenceGateway(model_registry)
         if settings.model_backend == "stub"
@@ -116,6 +119,7 @@ def build_container() -> AppContainer:
     return AppContainer(
         settings=settings,
         model_registry=model_registry,
+        model_catalog_service=model_catalog_service,
         inference_gateway=inference_gateway,
         conversation_store=conversation_store,
         mcp_gateway=mcp_gateway,

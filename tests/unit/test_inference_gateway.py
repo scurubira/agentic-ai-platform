@@ -49,6 +49,7 @@ def test_openrouter_completion_passes_api_key(
 
     assert captured["model"] == "openrouter/openrouter/free"
     assert captured["api_key"] == "test-key"
+    assert captured["max_tokens"] == 4096
     assert result.answer == "Resposta gratuita"
 
 
@@ -62,3 +63,13 @@ def test_openrouter_completion_requires_api_key(tmp_path: Path) -> None:
                 conversation=[{"role": "user", "content": "Olá"}],
             )
         )
+
+
+def test_reasoning_alias_uses_openrouter_provider(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("REASONING_MODEL_ID", "qwen/qwen3-next-80b-a3b-thinking")
+    registry = ModelRegistry(Path("litellm.yaml"))
+
+    target = registry.get("reasoning")
+
+    assert target.provider == "openrouter"
+    assert target.physical_model == "openrouter/qwen/qwen3-next-80b-a3b-thinking"

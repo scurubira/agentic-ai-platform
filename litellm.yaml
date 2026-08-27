@@ -4,7 +4,7 @@ model_list:
       model: ollama_chat/${OLLAMA_MODEL:-qwen2.5:7b-instruct-q4_K_M}
   - model_name: reasoning
     litellm_params:
-      model: openai/${REASONING_MODEL_ID:-qwen-cloud-70b}
+      model: openrouter/${REASONING_MODEL_ID:-qwen/qwen3-next-80b-a3b-thinking}
   - model_name: openrouter-free
     litellm_params:
       model: openrouter/${OPENROUTER_FREE_MODEL_ID:-openrouter/free}

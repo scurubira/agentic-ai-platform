@@ -70,10 +70,13 @@ Principais variáveis:
 
 - `MODEL_BACKEND=litellm`
 - `DEFAULT_MODEL_ALIAS=fast`
+- `MODEL_MAX_TOKENS=4096`: limita a saída enviada aos provedores e controla custo
+- `REASONING_MODEL_ID=qwen/qwen3-next-80b-a3b-thinking`: modelo usado pelo alias `reasoning` via OpenRouter
 - `OPENROUTER_API_KEY`: chave criada em https://openrouter.ai/settings/keys
 - `OPENROUTER_FREE_MODEL_ID=openrouter/free`: roteia automaticamente entre modelos gratuitos; também aceita um ID `:free`
 - `OLLAMA_BASE_URL=http://localhost:11434`
 - `STATE_BACKEND=postgres`
+- `CONVERSATION_RETENTION_HOURS=24`: remove o histórico das conversas após 24 horas; aceita valores de 1 a 24
 - `POSTGRES_HOST=localhost`
 - `POSTGRES_PORT=5432`
 - `POSTGRES_DB=agentic_ai_platform`
